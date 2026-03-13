@@ -1,0 +1,9 @@
+[tool.black]
+line-length = 88
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
