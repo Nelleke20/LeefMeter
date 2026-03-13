@@ -2,7 +2,7 @@
 
 ## Philosophy
 Simple over complex. Readable over clever. If a junior developer can't understand it in 30 seconds, simplify it.
-
+always run the unittest before pushing code to a branch
 ---
 
 ## Commands

@@ -161,5 +161,65 @@ class TestGetAllDays(unittest.TestCase):
         self.assertEqual(empty_service.get_all_days(), [])
 
 
+class TestGetActivityById(unittest.TestCase):
+    """Tests for ActivityService.get_activity_by_id."""
+
+    def setUp(self) -> None:
+        """Prepare service with one saved activity."""
+        self.service = _make_service()
+        self.activity = self.service.add_activity(_activity())
+
+    def test_returns_activity_when_found(self) -> None:
+        """get_activity_by_id should return the activity for a known ID."""
+        result = self.service.get_activity_by_id(self.activity.id)
+        self.assertEqual(result, self.activity)
+
+    def test_returns_none_for_unknown_id(self) -> None:
+        """get_activity_by_id should return None for an unrecognised ID."""
+        self.assertIsNone(self.service.get_activity_by_id("no-such-id"))
+
+    def test_returns_none_after_deletion(self) -> None:
+        """get_activity_by_id should return None once the activity is deleted."""
+        self.service.delete_activity(self.activity.id)
+        self.assertIsNone(self.service.get_activity_by_id(self.activity.id))
+
+
+class TestGetMonthSummary(unittest.TestCase):
+    """Tests for ActivityService.get_month_summary."""
+
+    def setUp(self) -> None:
+        """Prepare service with one activity in January 2024."""
+        self.service = _make_service()
+        self.service.add_activity(_activity(activity_date=date(2024, 1, 15)))
+
+    def test_returns_one_day_per_calendar_day_in_january(self) -> None:
+        """January has 31 days — get_month_summary should return exactly 31."""
+        days = self.service.get_month_summary(2024, 1)
+        self.assertEqual(len(days), 31)
+
+    def test_returns_correct_count_for_february_non_leap(self) -> None:
+        """February 2023 has 28 days — should return exactly 28 Days."""
+        days = self.service.get_month_summary(2023, 2)
+        self.assertEqual(len(days), 28)
+
+    def test_day_with_activity_has_non_empty_activities(self) -> None:
+        """The day on which an activity was recorded should have activities."""
+        days = self.service.get_month_summary(2024, 1)
+        day_15 = next(d for d in days if d.date.day == 15)
+        self.assertTrue(len(day_15.activities) > 0)
+
+    def test_day_without_activity_has_empty_activities(self) -> None:
+        """Days with no recorded activity should have an empty activities list."""
+        days = self.service.get_month_summary(2024, 1)
+        day_1 = next(d for d in days if d.date.day == 1)
+        self.assertEqual(day_1.activities, [])
+
+    def test_days_are_in_ascending_date_order(self) -> None:
+        """Days should be returned in ascending calendar order (1st first)."""
+        days = self.service.get_month_summary(2024, 1)
+        self.assertEqual(days[0].date, date(2024, 1, 1))
+        self.assertEqual(days[-1].date, date(2024, 1, 31))
+
+
 if __name__ == "__main__":
     unittest.main()

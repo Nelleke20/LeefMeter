@@ -9,6 +9,7 @@ import flet as ft
 
 from src.models.day import Day
 from src.services.activity_service import ActivityService
+from src.views.nav_bar import build_nav_bar
 
 
 class AgendaView:
@@ -28,18 +29,35 @@ class AgendaView:
         self._page = page
         self._service = service
 
-    def _on_day_tap(self, day_date: date) -> Callable[[ft.ControlEvent], None]:
-        """Return a tap handler that navigates to the given date.
+    def _on_day_tap(
+        self, day_date: date
+    ) -> Callable[[ft.ControlEvent], None]:
+        """Return an async tap handler that navigates to the given date.
 
         Args:
             day_date: The date the user tapped.
 
         Returns:
-            Event handler for ft.ListTile.on_click.
+            Async event handler for ft.ListTile.on_click.
         """
 
-        def handler(e: ft.ControlEvent) -> None:
-            self._page.go(f"/day/{day_date.isoformat()}")
+        async def handler(e: ft.ControlEvent) -> None:
+            await self._page.push_route(f"/day/{day_date.isoformat()}")
+
+        return handler
+
+    def _on_add_tap(self, today: str) -> Callable[[ft.ControlEvent], None]:
+        """Return an async tap handler that navigates to the add form.
+
+        Args:
+            today: ISO date string for today.
+
+        Returns:
+            Async event handler for the FAB on_click.
+        """
+
+        async def handler(e: ft.ControlEvent) -> None:
+            await self._page.push_route(f"/add/{today}")
 
         return handler
 
@@ -59,7 +77,7 @@ class AgendaView:
         return ft.ListTile(
             title=ft.Text(label),
             subtitle=ft.Text(subtitle),
-            trailing=ft.Icon(ft.icons.CHEVRON_RIGHT),
+            trailing=ft.Icon(ft.Icons.CHEVRON_RIGHT),
             on_click=self._on_day_tap(day.date),
         )
 
@@ -83,18 +101,24 @@ class AgendaView:
         Returns:
             A ft.View routed to "/".
         """
-        today = date.today().isoformat()
+        today = date.today()
         return ft.View(
             route="/",
             controls=[
                 ft.AppBar(
                     title=ft.Text("LeefMeter"),
-                    bgcolor=ft.colors.SURFACE_VARIANT,
+                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
                 ),
                 self._build_body(),
             ],
+            navigation_bar=build_nav_bar(
+                self._page,
+                selected_index=0,
+                year=today.year,
+                month=today.month,
+            ),
             floating_action_button=ft.FloatingActionButton(
-                icon=ft.icons.ADD,
-                on_click=lambda _: self._page.go(f"/add/{today}"),
+                icon=ft.Icons.ADD,
+                on_click=self._on_add_tap(today.isoformat()),
             ),
         )

@@ -13,7 +13,7 @@ and earn points for every logged activity.
 | `src/models/` | — | `Activity` and `Day` dataclasses |
 | `src/repositories/` | Repository | `ActivityRepository` ABC → `FirebaseRepository`, `InMemoryRepository` |
 | `src/services/` | Strategy | `PointCalculationStrategy` ABC → `CategoryPointStrategy`, `DurationPointStrategy`, `CombinedPointStrategy`; `ActivityService` orchestrates CRUD + scoring |
-| `src/views/` | — | Flet views: `AgendaView`, `DayView`, `ActivityForm` |
+| `src/views/` | — | Flet views: `AgendaView`, `DayView`, `ActivityForm`, `MonthView`; shared `nav_bar` |
 | `src/app.py` | — | Flet entry point with client-side routing |
 
 ---
@@ -35,9 +35,11 @@ LeefMeter/
 │   │   ├── point_strategy.py # Strategy pattern for scoring
 │   │   └── activity_service.py
 │   └── views/
-│       ├── agenda_view.py
-│       ├── day_view.py
-│       └── activity_form.py
+│       ├── agenda_view.py    # Scrollable list of days with activities
+│       ├── day_view.py       # Day detail with edit/delete + pinned points footer
+│       ├── activity_form.py  # Add and edit activity form
+│       ├── month_view.py     # Full month calendar with prev/next navigation
+│       └── nav_bar.py        # Shared bottom navigation bar (Agenda / Maand)
 ├── tests/
 │   ├── test_models.py
 │   ├── test_strategies.py

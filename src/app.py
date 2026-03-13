@@ -12,6 +12,7 @@ from src.services.point_strategy import CombinedPointStrategy
 from src.views.activity_form import ActivityForm
 from src.views.agenda_view import AgendaView
 from src.views.day_view import DayView
+from src.views.month_view import MonthView
 
 _DEFAULT_ROUTE = "/"
 
@@ -52,10 +53,19 @@ def _resolve_view(
     if route.startswith("/add/"):
         day_date = date.fromisoformat(route.split("/add/")[1])
         return ActivityForm(page, service, day_date).build()
+    if route.startswith("/edit/"):
+        parts = route.split("/")
+        day_date = date.fromisoformat(parts[2])
+        activity_id = parts[3]
+        activity = service.get_activity_by_id(activity_id)
+        return ActivityForm(page, service, day_date, activity).build()
+    if route.startswith("/month/"):
+        parts = route.split("/")
+        return MonthView(page, service, int(parts[2]), int(parts[3])).build()
     return AgendaView(page, service).build()
 
 
-def main(page: ft.Page) -> None:
+async def main(page: ft.Page) -> None:
     """Configure the Flet page and wire up routing.
 
     Args:
@@ -64,20 +74,24 @@ def main(page: ft.Page) -> None:
     page.title = "LeefMeter"
     service = _build_service()
 
-    def on_route_change(e: ft.RouteChangeEvent) -> None:
+    async def on_route_change(e: ft.RouteChangeEvent) -> None:
         page.views.clear()
         page.views.append(_resolve_view(page.route, page, service))
         page.update()
 
-    def on_view_pop(e: ft.ViewPopEvent) -> None:
+    async def on_view_pop(e: ft.ViewPopEvent) -> None:
         page.views.pop()
         top = page.views[-1]
-        page.go(top.route)  # type: ignore[arg-type]
+        await page.push_route(top.route)  # type: ignore[arg-type]
 
     page.on_route_change = on_route_change
     page.on_view_pop = on_view_pop
-    page.go(_DEFAULT_ROUTE)
+    # Manually render the initial view — push_route won't fire
+    # on_route_change if the route is already "/" on startup.
+    page.views.clear()
+    page.views.append(_resolve_view(_DEFAULT_ROUTE, page, service))
+    page.update()
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.run(main)

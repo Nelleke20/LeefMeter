@@ -10,13 +10,15 @@ import flet as ft
 from src.models.activity import Activity
 from src.models.day import Day
 from src.services.activity_service import ActivityService
+from src.views.nav_bar import build_nav_bar
 
 
 class DayView:
     """Renders all activities for a specific calendar date.
 
     Displays each activity's name, category, duration, and points.
-    Provides delete buttons per activity and a FAB to add new ones.
+    Provides edit and delete buttons per activity and a FAB to add new ones.
+    Total points are pinned at the bottom above the navigation bar.
     """
 
     def __init__(
@@ -36,30 +38,61 @@ class DayView:
         self._service = service
         self._date = day_date
 
-    def _on_delete(self, activity_id: str) -> Callable[[ft.ControlEvent], None]:
-        """Return a handler that deletes an activity and refreshes the view.
+    def _on_delete(
+        self, activity_id: str
+    ) -> Callable[[ft.ControlEvent], None]:
+        """Return an async handler that deletes an activity and refreshes.
 
         Args:
             activity_id: UUID of the activity to delete.
 
         Returns:
-            Event handler for the delete IconButton.
+            Async event handler for the delete IconButton.
         """
 
-        def handler(e: ft.ControlEvent) -> None:
+        async def handler(e: ft.ControlEvent) -> None:
             self._service.delete_activity(activity_id)
-            self._page.go(f"/day/{self._date.isoformat()}")
+            await self._page.push_route(f"/day/{self._date.isoformat()}")
+
+        return handler
+
+    def _on_edit(self, activity: Activity) -> Callable[[ft.ControlEvent], None]:
+        """Return an async handler that navigates to the edit form.
+
+        Args:
+            activity: The activity to edit.
+
+        Returns:
+            Async event handler for the edit IconButton.
+        """
+
+        async def handler(e: ft.ControlEvent) -> None:
+            await self._page.push_route(
+                f"/edit/{self._date.isoformat()}/{activity.id}"
+            )
+
+        return handler
+
+    def _on_add_tap(self) -> Callable[[ft.ControlEvent], None]:
+        """Return an async tap handler that opens the add form for this date.
+
+        Returns:
+            Async event handler for the FAB on_click.
+        """
+
+        async def handler(e: ft.ControlEvent) -> None:
+            await self._page.push_route(f"/add/{self._date.isoformat()}")
 
         return handler
 
     def _build_activity_tile(self, activity: Activity) -> ft.ListTile:
-        """Build a list tile for a single activity.
+        """Build a list tile for a single activity with edit and delete actions.
 
         Args:
             activity: The activity to render.
 
         Returns:
-            A ListTile showing activity details and a delete button.
+            A ListTile showing activity details with edit and delete buttons.
         """
         subtitle = (
             f"{activity.category} · {activity.duration_minutes} min"
@@ -68,30 +101,53 @@ class DayView:
         return ft.ListTile(
             title=ft.Text(activity.name),
             subtitle=ft.Text(subtitle),
-            trailing=ft.IconButton(
-                icon=ft.icons.DELETE_OUTLINE,
-                on_click=self._on_delete(activity.id),
+            trailing=ft.Row(
+                controls=[
+                    ft.IconButton(
+                        icon=ft.Icons.EDIT_OUTLINED,
+                        on_click=self._on_edit(activity),
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.DELETE_OUTLINE,
+                        on_click=self._on_delete(activity.id),
+                    ),
+                ],
+                tight=True,
             ),
         )
 
     def _build_body(self, day: Day) -> list[ft.Control]:
-        """Build the list of controls for the day's content area.
+        """Build the scrollable activity list for the day.
 
         Args:
             day: The Day containing activities to render.
 
         Returns:
-            A list of controls — header plus one tile per activity.
+            One tile per activity, or an empty-state text control.
         """
-        header = ft.Text(
-            f"Totaal: {day.total_points} punten",
-            size=16,
-            weight=ft.FontWeight.BOLD,
-        )
         if not day.activities:
-            return [header, ft.Text("Geen activiteiten op deze dag.")]
-        tiles = [self._build_activity_tile(a) for a in day.activities]
-        return [header, *tiles]
+            return [ft.Text("Geen activiteiten op deze dag.")]
+        return [self._build_activity_tile(a) for a in day.activities]
+
+    def _build_points_footer(self, day: Day) -> ft.Container:
+        """Build the pinned points total footer.
+
+        Args:
+            day: The Day whose total points to display.
+
+        Returns:
+            A Container with the total points label.
+        """
+        return ft.Container(
+            content=ft.Text(
+                f"Totaal: {day.total_points} punten",
+                size=16,
+                weight=ft.FontWeight.BOLD,
+                text_align=ft.TextAlign.CENTER,
+            ),
+            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
+            padding=12,
+        )
 
     def build(self) -> ft.View:
         """Compose and return the full Flet View for the day.
@@ -106,14 +162,27 @@ class DayView:
             controls=[
                 ft.AppBar(
                     title=ft.Text(title),
-                    bgcolor=ft.colors.SURFACE_VARIANT,
+                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
                 ),
-                ft.ListView(controls=self._build_body(day), expand=True),
+                ft.Column(
+                    controls=[
+                        ft.ListView(
+                            controls=self._build_body(day),
+                            expand=True,
+                        ),
+                        self._build_points_footer(day),
+                    ],
+                    expand=True,
+                ),
             ],
+            navigation_bar=build_nav_bar(
+                self._page,
+                selected_index=0,
+                year=self._date.year,
+                month=self._date.month,
+            ),
             floating_action_button=ft.FloatingActionButton(
-                icon=ft.icons.ADD,
-                on_click=lambda _: self._page.go(
-                    f"/add/{self._date.isoformat()}"
-                ),
+                icon=ft.Icons.ADD,
+                on_click=self._on_add_tap(),
             ),
         )
