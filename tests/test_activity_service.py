@@ -8,7 +8,7 @@ from datetime import date
 from src.models.activity import Activity
 from src.repositories.in_memory_repository import InMemoryRepository
 from src.services.activity_service import ActivityService
-from src.services.point_strategy import CombinedPointStrategy
+from src.services.point_strategy import IntensityPointStrategy
 
 
 def _make_service() -> ActivityService:
@@ -19,13 +19,13 @@ def _make_service() -> ActivityService:
     """
     return ActivityService(
         repository=InMemoryRepository(),
-        strategy=CombinedPointStrategy(),
+        strategy=IntensityPointStrategy(),
     )
 
 
 def _activity(
     name: str = "Hardlopen",
-    category: str = "sport",
+    category: str = "gemiddeld",
     duration: int = 30,
     activity_date: date | None = None,
 ) -> Activity:
@@ -57,7 +57,7 @@ class TestAddActivity(unittest.TestCase):
 
     def test_add_activity_sets_points(self) -> None:
         """add_activity should populate the points field via the strategy."""
-        activity = _activity(category="sport", duration=30)
+        activity = _activity(category="zwaar", duration=30)
         saved = self.service.add_activity(activity)
         self.assertGreater(saved.points, 0)
 

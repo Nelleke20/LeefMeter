@@ -6,15 +6,14 @@ from abc import ABC, abstractmethod
 
 from src.models.activity import Activity
 
-CATEGORY_BASE_POINTS: dict[str, int] = {
-    "sport": 10,
-    "voeding": 5,
-    "mentaal": 8,
-    "sociaal": 6,
-    "rust": 4,
+INTENSITY_MULTIPLIERS: dict[str, int] = {
+    "rust": -1,
+    "laag": 1,
+    "gemiddeld": 2,
+    "zwaar": 3,
 }
 
-POINTS_PER_TEN_MINUTES: int = 1
+MINUTES_PER_HALF_HOUR: int = 30
 
 
 class PointCalculationStrategy(ABC):
@@ -32,69 +31,29 @@ class PointCalculationStrategy(ABC):
             activity: The activity to score.
 
         Returns:
-            Integer point value, always >= 0.
+            Integer point value (may be negative for rust activities).
         """
 
 
-class CategoryPointStrategy(PointCalculationStrategy):
-    """Awards a fixed number of points based on activity category.
+class IntensityPointStrategy(PointCalculationStrategy):
+    """Awards points based on intensity level and duration.
 
-    Uses the Strategy pattern. Points are defined in CATEGORY_BASE_POINTS.
-    Unknown categories receive zero points.
+    Uses the Strategy pattern. Points = multiplier × (duration / 30 min):
+    - rust:     -1 per half hour
+    - laag:     +1 per half hour
+    - gemiddeld: +2 per half hour
+    - zwaar:    +3 per half hour
     """
 
     def calculate(self, activity: Activity) -> int:
-        """Return the category base points for the activity.
+        """Return points based on intensity and duration.
 
         Args:
             activity: The activity to score.
 
         Returns:
-            Points defined for the category, or 0 if unknown.
+            Points rounded to nearest integer. Can be negative for rust.
         """
-        return CATEGORY_BASE_POINTS.get(activity.category, 0)
-
-
-class DurationPointStrategy(PointCalculationStrategy):
-    """Awards one point for every ten minutes of activity duration.
-
-    Uses the Strategy pattern. Short activities below 10 minutes
-    receive zero points.
-    """
-
-    def calculate(self, activity: Activity) -> int:
-        """Return points based on activity duration.
-
-        Args:
-            activity: The activity to score.
-
-        Returns:
-            Points equal to duration_minutes // 10.
-        """
-        return (activity.duration_minutes // 10) * POINTS_PER_TEN_MINUTES
-
-
-class CombinedPointStrategy(PointCalculationStrategy):
-    """Combines category base points with duration bonus points.
-
-    Uses the Strategy pattern. Delegates to CategoryPointStrategy and
-    DurationPointStrategy and sums their results.
-    """
-
-    def __init__(self) -> None:
-        """Initialise with both sub-strategies."""
-        self._category = CategoryPointStrategy()
-        self._duration = DurationPointStrategy()
-
-    def calculate(self, activity: Activity) -> int:
-        """Return base category points plus duration bonus.
-
-        Args:
-            activity: The activity to score.
-
-        Returns:
-            Sum of category and duration points.
-        """
-        return self._category.calculate(activity) + self._duration.calculate(
-            activity
-        )
+        multiplier = INTENSITY_MULTIPLIERS.get(activity.category, 0)
+        half_hours = activity.duration_minutes / MINUTES_PER_HALF_HOUR
+        return round(multiplier * half_hours)

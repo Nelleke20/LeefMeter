@@ -6,9 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import date
 
-VALID_CATEGORIES: frozenset[str] = frozenset(
-    {"sport", "voeding", "mentaal", "sociaal", "rust"}
-)
+INTENSITY_LEVELS: tuple[str, ...] = ("rust", "laag", "gemiddeld", "zwaar")
 
 
 @dataclass
@@ -17,7 +15,7 @@ class Activity:
 
     Attributes:
         name: Human-readable name of the activity.
-        category: One of the predefined VALID_CATEGORIES.
+        category: Intensity level — one of INTENSITY_LEVELS.
         duration_minutes: How long the activity lasted.
         date: The calendar date on which the activity took place.
         id: Unique identifier, auto-generated if not provided.

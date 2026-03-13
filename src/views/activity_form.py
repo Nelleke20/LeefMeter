@@ -6,20 +6,26 @@ from datetime import date
 
 import flet as ft
 
-from src.models.activity import Activity, VALID_CATEGORIES
+from src.models.activity import Activity, INTENSITY_LEVELS
 from src.services.activity_service import ActivityService
 
 _MIN_DURATION_MINUTES: int = 1
 _ADD_TITLE: str = "Activiteit toevoegen"
 _EDIT_TITLE: str = "Activiteit bewerken"
 
+_INTENSITY_LABELS: dict[str, str] = {
+    "rust": "Rust  (−1 pt / 30 min)",
+    "laag": "Laag  (+1 pt / 30 min)",
+    "gemiddeld": "Gemiddeld  (+2 pt / 30 min)",
+    "zwaar": "Zwaar  (+3 pt / 30 min)",
+}
+
 
 class ActivityForm:
     """Form view for creating or editing an activity.
 
-    When an existing Activity is passed, the form pre-fills its values
-    and calls update_activity on submit. Without an existing activity
-    the form starts blank and calls add_activity on submit.
+    When an existing Activity is passed the form pre-fills its values
+    and calls update_activity on submit. Without one, add_activity is used.
     """
 
     def __init__(
@@ -45,11 +51,16 @@ class ActivityForm:
             label="Naam activiteit",
             autofocus=True,
             value=activity.name if activity else "",
+            border_radius=12,
         )
-        self._category_dropdown = ft.Dropdown(
-            label="Categorie",
-            options=[ft.dropdown.Option(c) for c in sorted(VALID_CATEGORIES)],
+        self._intensity_dropdown = ft.Dropdown(
+            label="Intensiteit",
+            options=[
+                ft.dropdown.Option(key=lvl, text=_INTENSITY_LABELS[lvl])
+                for lvl in INTENSITY_LEVELS
+            ],
             value=activity.category if activity else None,
+            border_radius=12,
         )
         self._duration_field = ft.TextField(
             label="Duur (minuten)",
@@ -59,6 +70,7 @@ class ActivityForm:
                 if activity
                 else str(_MIN_DURATION_MINUTES)
             ),
+            border_radius=12,
         )
         self._error_text = ft.Text(value="", color=ft.Colors.ERROR)
 
@@ -78,8 +90,8 @@ class ActivityForm:
         """
         if not self._name_field.value:
             return "Vul een naam in."
-        if not self._category_dropdown.value:
-            return "Kies een categorie."
+        if not self._intensity_dropdown.value:
+            return "Kies een intensiteit."
         raw = self._duration_field.value or ""
         if not raw.isdigit() or int(raw) < _MIN_DURATION_MINUTES:
             return f"Duur moet minimaal {_MIN_DURATION_MINUTES} minuut zijn."
@@ -100,7 +112,7 @@ class ActivityForm:
             activity = Activity(
                 id=self._activity.id,  # type: ignore[union-attr]
                 name=self._name_field.value,  # type: ignore[arg-type]
-                category=self._category_dropdown.value,  # type: ignore[arg-type]
+                category=self._intensity_dropdown.value,  # type: ignore[arg-type]
                 duration_minutes=int(self._duration_field.value),  # type: ignore[arg-type]
                 date=self._date,
             )
@@ -108,7 +120,7 @@ class ActivityForm:
         else:
             activity = Activity(
                 name=self._name_field.value,  # type: ignore[arg-type]
-                category=self._category_dropdown.value,  # type: ignore[arg-type]
+                category=self._intensity_dropdown.value,  # type: ignore[arg-type]
                 duration_minutes=int(self._duration_field.value),  # type: ignore[arg-type]
                 date=self._date,
             )
@@ -134,17 +146,22 @@ class ActivityForm:
                     title=ft.Text(title),
                     bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
                 ),
-                ft.Column(
-                    controls=[
-                        self._name_field,
-                        self._category_dropdown,
-                        self._duration_field,
-                        self._error_text,
-                        ft.ElevatedButton(
-                            "Opslaan", on_click=self._on_submit
-                        ),
-                    ],
-                    spacing=16,
+                ft.Container(
+                    content=ft.Column(
+                        controls=[
+                            self._name_field,
+                            self._intensity_dropdown,
+                            self._duration_field,
+                            self._error_text,
+                            ft.FilledButton(
+                                "Opslaan",
+                                icon=ft.Icons.SAVE_OUTLINED,
+                                on_click=self._on_submit,
+                            ),
+                        ],
+                        spacing=16,
+                    ),
+                    padding=16,
                     expand=True,
                 ),
             ],
