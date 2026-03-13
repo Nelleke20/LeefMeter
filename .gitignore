@@ -1,0 +1,17 @@
+# Firebase credentials — never commit
+firebase_credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.mypy_cache/
+.pytest_cache/
+.coverage
+
+# Flet build output
+build/
