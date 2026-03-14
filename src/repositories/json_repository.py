@@ -9,8 +9,9 @@ from typing import Any
 
 from src.models.activity import Activity
 from src.repositories.base import ActivityRepository
+from src.storage import get_data_dir
 
-_DEFAULT_PATH: Path = Path.home() / ".leefmeter" / "activities.json"
+_DEFAULT_PATH: Path = get_data_dir() / "activities.json"
 
 
 class JsonRepository(ActivityRepository):

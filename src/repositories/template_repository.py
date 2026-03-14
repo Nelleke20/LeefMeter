@@ -7,8 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from src.models.template import Template
+from src.storage import get_data_dir
 
-_DEFAULT_PATH: Path = Path.home() / ".leefmeter" / "templates.json"
+_DEFAULT_PATH: Path = get_data_dir() / "templates.json"
 
 
 class TemplateRepository:

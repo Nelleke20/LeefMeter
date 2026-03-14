@@ -6,8 +6,9 @@ import json
 from pathlib import Path
 
 from src.models.settings import AppSettings
+from src.storage import get_data_dir
 
-_DEFAULT_PATH: Path = Path.home() / ".leefmeter" / "settings.json"
+_DEFAULT_PATH: Path = get_data_dir() / "settings.json"
 
 
 class SettingsService:
@@ -23,7 +24,6 @@ class SettingsService:
             file_path: Path to the settings JSON file.
         """
         self._path = file_path
-        self._path.parent.mkdir(parents=True, exist_ok=True)
 
     def load(self) -> AppSettings:
         """Load settings from disk, returning defaults if the file does not exist.
