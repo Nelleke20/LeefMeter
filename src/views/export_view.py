@@ -1,88 +1,115 @@
-"""Export / Versturen view — export activities to Excel and email."""
+"""Export view — export activities to Excel."""
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import flet as ft
 
 from src.services.export_service import ExportService
+from src.views.nav_bar import build_nav_rail
 
-_DEFAULT_EMAIL: str = ""
 _EXPORT_PATH: Path = Path.home() / "Downloads" / "leefmeter_export.xlsx"
+_NO_DATE: str = "Geen datum"
 
 
 class ExportView:
-    """Lets the user export all activity data to Excel and send by email.
+    """Lets the user export all activity data to an Excel file.
 
-    The Excel file is saved to ~/Downloads. A mailto: link is opened
-    in the default mail client, where the user can attach the file.
+    Date range can be selected via a calendar date picker.
+    The Excel file is saved to ~/Downloads.
     """
 
     def __init__(self, page: ft.Page, export_service: ExportService) -> None:
         """Initialise with the Flet page and export service.
 
         Args:
-            page: The active Flet page used for dialogs and URL launching.
+            page: The active Flet page.
             export_service: Service that writes the Excel file.
         """
         self._page = page
         self._export_service = export_service
-        self._email_field = ft.TextField(
-            label="E-mailadres",
-            keyboard_type=ft.KeyboardType.EMAIL,
-            value=_DEFAULT_EMAIL,
-            border_radius=12,
-            prefix_icon=ft.Icons.EMAIL_OUTLINED,
-        )
+        self._from_date: date | None = None
+        self._to_date: date | None = None
         self._status_text = ft.Text(value="", color=ft.Colors.PRIMARY)
+        self._from_label = ft.Text(_NO_DATE, color=ft.Colors.ON_SURFACE_VARIANT)
+        self._to_label = ft.Text(_NO_DATE, color=ft.Colors.ON_SURFACE_VARIANT)
 
-    async def _on_export(self, e: ft.ControlEvent) -> None:
+        self._from_picker = ft.DatePicker(
+            on_change=self._on_from_change,
+            on_dismiss=lambda _: None,
+        )
+        self._to_picker = ft.DatePicker(
+            on_change=self._on_to_change,
+            on_dismiss=lambda _: None,
+        )
+
+    def _on_from_change(self, e: ft.ControlEvent) -> None:
+        """Store the selected from-date and update label.
+
+        Args:
+            e: Change event from the from-date picker.
+        """
+        val = self._from_picker.value
+        if val is not None:
+            self._from_date = val.date() if hasattr(val, "date") else val
+            self._from_label.value = self._from_date.strftime("%d-%m-%Y")
+        else:
+            self._from_date = None
+            self._from_label.value = _NO_DATE
+        self._page.update()
+
+    def _on_to_change(self, e: ft.ControlEvent) -> None:
+        """Store the selected to-date and update label.
+
+        Args:
+            e: Change event from the to-date picker.
+        """
+        val = self._to_picker.value
+        if val is not None:
+            self._to_date = val.date() if hasattr(val, "date") else val
+            self._to_label.value = self._to_date.strftime("%d-%m-%Y")
+        else:
+            self._to_date = None
+            self._to_label.value = _NO_DATE
+        self._page.update()
+
+    def _open_from_picker(self, e: ft.ControlEvent) -> None:
+        """Open the from-date calendar picker.
+
+        Args:
+            e: Click event from the from-date button.
+        """
+        self._from_picker.open = True
+        self._page.update()
+
+    def _open_to_picker(self, e: ft.ControlEvent) -> None:
+        """Open the to-date calendar picker.
+
+        Args:
+            e: Click event from the to-date button.
+        """
+        self._to_picker.open = True
+        self._page.update()
+
+    def _on_export(self, e: ft.ControlEvent) -> None:
         """Create the Excel file and update the status message.
 
         Args:
-            e: The Flet control event from the export button.
+            e: Click event from the export button.
         """
         try:
-            path = self._export_service.export(output_path=_EXPORT_PATH)
+            path = self._export_service.export(
+                output_path=_EXPORT_PATH,
+                from_date=self._from_date,
+                to_date=self._to_date,
+            )
             self._status_text.color = ft.Colors.PRIMARY
             self._status_text.value = f"Opgeslagen: {path}"
         except Exception as exc:
             self._status_text.color = ft.Colors.ERROR
             self._status_text.value = f"Fout: {exc}"
-        self._page.update()
-
-    async def _on_send(self, e: ft.ControlEvent) -> None:
-        """Open the default mail client with a pre-filled subject.
-
-        Creates the Excel file first, then opens a mailto: link.
-
-        Args:
-            e: The Flet control event from the send button.
-        """
-        email = self._email_field.value or ""
-        if not email:
-            self._status_text.color = ft.Colors.ERROR
-            self._status_text.value = "Vul een e-mailadres in."
-            self._page.update()
-            return
-        try:
-            path = self._export_service.export(output_path=_EXPORT_PATH)
-            self._status_text.color = ft.Colors.PRIMARY
-            self._status_text.value = (
-                f"Bestand klaar: {path}\n"
-                "Voeg het bestand toe als bijlage in je mail."
-            )
-        except Exception as exc:
-            self._status_text.color = ft.Colors.ERROR
-            self._status_text.value = f"Fout: {exc}"
-            self._page.update()
-            return
-        subject = "LeefMeter export"
-        body = "Bijgevoegd vind je de LeefMeter activiteitenexport."
-        await self._page.launch_url_async(
-            f"mailto:{email}?subject={subject}&body={body}"
-        )
         self._page.update()
 
     def build(self) -> ft.View:
@@ -91,45 +118,64 @@ class ExportView:
         Returns:
             A ft.View routed to "/export".
         """
-        return ft.View(
-            route="/export",
+        today = date.today()
+        if self._from_picker not in self._page.overlay:
+            self._page.overlay.append(self._from_picker)
+        if self._to_picker not in self._page.overlay:
+            self._page.overlay.append(self._to_picker)
+
+        content_column = ft.Column(
             controls=[
-                ft.AppBar(
-                    leading=ft.IconButton(
-                        icon=ft.Icons.MENU,
-                        on_click=lambda _: self._page.show_drawer() and None,
-                    ),
-                    leading_width=48,
-                    title=ft.Text("Versturen"),
-                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
-                ),
                 ft.Container(
                     content=ft.Column(
                         controls=[
-                            ft.Icon(
-                                ft.Icons.TABLE_CHART_OUTLINED,
-                                size=56,
-                                color=ft.Colors.PRIMARY,
-                            ),
                             ft.Text(
-                                "Exporteer je activiteiten naar Excel.",
-                                text_align=ft.TextAlign.CENTER,
+                                "Exporteren",
+                                size=20,
+                                weight=ft.FontWeight.BOLD,
                             ),
-                            ft.FilledTonalButton(
+                            ft.Row(
+                                controls=[
+                                    ft.Column(
+                                        controls=[
+                                            ft.Text(
+                                                "Van",
+                                                weight=ft.FontWeight.W_500,
+                                            ),
+                                            ft.OutlinedButton(
+                                                "Kies datum",
+                                                icon=ft.Icons.CALENDAR_TODAY_OUTLINED,
+                                                on_click=self._open_from_picker,
+                                            ),
+                                            self._from_label,
+                                        ],
+                                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                        spacing=4,
+                                    ),
+                                    ft.Column(
+                                        controls=[
+                                            ft.Text(
+                                                "Tot",
+                                                weight=ft.FontWeight.W_500,
+                                            ),
+                                            ft.OutlinedButton(
+                                                "Kies datum",
+                                                icon=ft.Icons.CALENDAR_TODAY_OUTLINED,
+                                                on_click=self._open_to_picker,
+                                            ),
+                                            self._to_label,
+                                        ],
+                                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                        spacing=4,
+                                    ),
+                                ],
+                                alignment=ft.MainAxisAlignment.CENTER,
+                                spacing=24,
+                            ),
+                            ft.FilledButton(
                                 "Exporteer naar Excel",
                                 icon=ft.Icons.DOWNLOAD_OUTLINED,
                                 on_click=self._on_export,
-                            ),
-                            ft.Divider(),
-                            ft.Text(
-                                "Stuur per e-mail",
-                                weight=ft.FontWeight.BOLD,
-                            ),
-                            self._email_field,
-                            ft.FilledButton(
-                                "Versturen",
-                                icon=ft.Icons.SEND_OUTLINED,
-                                on_click=self._on_send,
                             ),
                             self._status_text,
                         ],
@@ -139,5 +185,30 @@ class ExportView:
                     padding=24,
                     expand=True,
                 ),
+            ],
+            expand=True,
+        )
+        return ft.View(
+            route="/export",
+            padding=0,
+            controls=[
+                ft.Row(
+                    controls=[
+                        build_nav_rail(
+                            self._page,
+                            selected_index=3,
+                            year=today.year,
+                            month=today.month,
+                        ),
+                        ft.VerticalDivider(
+                            width=1,
+                            thickness=1,
+                            color=ft.Colors.OUTLINE_VARIANT,
+                        ),
+                        content_column,
+                    ],
+                    expand=True,
+                    spacing=0,
+                )
             ],
         )

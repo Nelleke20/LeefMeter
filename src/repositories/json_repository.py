@@ -83,9 +83,7 @@ class JsonRepository(ActivityRepository):
             All activities whose date matches the given day.
         """
         return [
-            self._from_dict(r)
-            for r in self._load()
-            if r["date"] == day.isoformat()
+            self._from_dict(r) for r in self._load() if r["date"] == day.isoformat()
         ]
 
     def get_all(self) -> list[Activity]:
@@ -133,6 +131,7 @@ class JsonRepository(ActivityRepository):
             "duration_minutes": activity.duration_minutes,
             "date": activity.date.isoformat(),
             "points": activity.points,
+            "start_time": activity.start_time,
         }
 
     @staticmethod
@@ -152,4 +151,5 @@ class JsonRepository(ActivityRepository):
             duration_minutes=data["duration_minutes"],
             date=date.fromisoformat(data["date"]),
             points=data["points"],
+            start_time=data.get("start_time"),
         )

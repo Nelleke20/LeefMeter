@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date  # noqa: F401 — used in dataclass field annotation
 
 from src.models.activity import Activity
 
