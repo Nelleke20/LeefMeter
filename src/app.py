@@ -52,6 +52,21 @@ def _build_services() -> (
     )
 
 
+def _with_safe_area(view: ft.View) -> ft.View:
+    """Wrap a view's controls in SafeArea so content avoids system UI on mobile.
+
+    Args:
+        view: The view whose controls should be wrapped.
+
+    Returns:
+        The same view with SafeArea applied around each top-level control.
+    """
+    view.controls = [
+        ft.SafeArea(content=ctrl, expand=True) for ctrl in view.controls
+    ]
+    return view
+
+
 def _resolve_view(
     route: str,
     page: ft.Page,
@@ -77,31 +92,41 @@ def _resolve_view(
     """
     if route.startswith("/day/"):
         day_date = date.fromisoformat(route.split("/day/")[1])
-        return DayView(
-            page, activity_service, template_service, day_date, settings_service
-        ).build()
+        return _with_safe_area(
+            DayView(
+                page, activity_service, template_service, day_date, settings_service
+            ).build()
+        )
     if route.startswith("/month/"):
         parts = route.split("/")
-        return MonthView(
-            page, activity_service, int(parts[2]), int(parts[3]), settings_service
-        ).build()
+        return _with_safe_area(
+            MonthView(
+                page, activity_service, int(parts[2]), int(parts[3]), settings_service
+            ).build()
+        )
     if route == "/day-templates":
-        return DayTemplatesView(page, day_template_service, activity_service).build()
+        return _with_safe_area(
+            DayTemplatesView(page, day_template_service, activity_service).build()
+        )
     if route.startswith("/day-templates/edit/"):
         template_id = route.split("/day-templates/edit/")[1]
         template = day_template_service.get_by_id(template_id)
         if template is not None:
-            return DayTemplateEditView(
-                page, template, day_template_service, template_service
-            ).build()
+            return _with_safe_area(
+                DayTemplateEditView(
+                    page, template, day_template_service, template_service
+                ).build()
+            )
     if route == "/chart":
-        return ChartView(page, activity_service).build()
+        return _with_safe_area(ChartView(page, activity_service).build())
     if route == "/export":
-        return ExportView(page, export_service).build()
+        return _with_safe_area(ExportView(page, export_service).build())
     today = date.today()
-    return MonthView(
-        page, activity_service, today.year, today.month, settings_service
-    ).build()
+    return _with_safe_area(
+        MonthView(
+            page, activity_service, today.year, today.month, settings_service
+        ).build()
+    )
 
 
 async def main(page: ft.Page) -> None:

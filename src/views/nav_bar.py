@@ -47,7 +47,7 @@ def build_nav_rail(
 
     return ft.NavigationRail(
         selected_index=selected_index,
-        label_type=ft.NavigationRailLabelType.ALL,
+        label_type=ft.NavigationRailLabelType.NONE,
         on_change=on_change,
         destinations=[
             ft.NavigationRailDestination(
