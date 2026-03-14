@@ -82,7 +82,8 @@ class TestInMemoryRepository(unittest.TestCase):
         self.repo.save(activity)
         activity.points = 99
         self.repo.update(activity)
-        self.assertEqual(self.repo.get_by_id(activity.id).points, 99)  # type: ignore[union-attr]
+        updated = self.repo.get_by_id(activity.id)
+        self.assertEqual(updated.points, 99)  # type: ignore[union-attr]
 
     def test_delete_removes_activity(self) -> None:
         """delete should make the activity unretrievable."""

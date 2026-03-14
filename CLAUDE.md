@@ -1,8 +1,15 @@
 # Python Project — Claude Code Standards
 
 ## Philosophy
-Simple over complex. Readable over clever. If a junior developer can't understand it in 30 seconds, simplify it.
+Simple over complex.
 
+Readable over clever. If a junior developer can't understand it in 30 seconds, simplify it.
+
+Always run the unittest before pushing code to a branch.
+
+Always adjust the readme based on new code changes
+
+Make a prompt file where all my prompt instructions are automatically saved and analyzed when running code just like the claud.md file. This way if i start a new session my history can be analyzed.
 ---
 
 ## Commands

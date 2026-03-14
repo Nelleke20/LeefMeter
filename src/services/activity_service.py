@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 from datetime import date
 
 from src.models.activity import Activity
@@ -77,6 +78,36 @@ class ActivityService:
         """
         activities = self._repository.get_by_date(day)
         return Day(date=day, activities=activities)
+
+    def get_activity_by_id(self, activity_id: str) -> Activity | None:
+        """Return a single activity by its UUID.
+
+        Args:
+            activity_id: The UUID of the activity to retrieve.
+
+        Returns:
+            The matching Activity, or None if not found.
+        """
+        return self._repository.get_by_id(activity_id)
+
+    def get_month_summary(self, year: int, month: int) -> list[Day]:
+        """Return one Day per calendar day in the given month.
+
+        Days with no recorded activities are included with an empty list.
+        Days are returned in ascending date order.
+
+        Args:
+            year: Four-digit calendar year.
+            month: Calendar month, 1-12.
+
+        Returns:
+            list[Day] with one entry per calendar day of the month.
+        """
+        _, days_in_month = calendar.monthrange(year, month)
+        return [
+            self.get_activities_for_day(date(year, month, d))
+            for d in range(1, days_in_month + 1)
+        ]
 
     def get_all_days(self) -> list[Day]:
         """Return one Day per date that has at least one activity.

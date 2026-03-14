@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date  # noqa: F401 — used in dataclass field annotation
 
-VALID_CATEGORIES: frozenset[str] = frozenset(
-    {"sport", "voeding", "mentaal", "sociaal", "rust"}
-)
+INTENSITY_LEVELS: tuple[str, ...] = ("rust", "laag", "gemiddeld", "zwaar")
 
 
 @dataclass
@@ -17,7 +15,7 @@ class Activity:
 
     Attributes:
         name: Human-readable name of the activity.
-        category: One of the predefined VALID_CATEGORIES.
+        category: Intensity level — one of INTENSITY_LEVELS.
         duration_minutes: How long the activity lasted.
         date: The calendar date on which the activity took place.
         id: Unique identifier, auto-generated if not provided.
@@ -30,3 +28,4 @@ class Activity:
     date: date
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     points: int = 0
+    start_time: str | None = None  # "HH:MM", e.g. "08:30"
