@@ -29,7 +29,13 @@ _TOTAL_FONT = Font(bold=True)
 def get_export_path() -> Path:
     """Return the platform-appropriate path for the Excel export file.
 
-    On Android/iOS uses the app's private writable storage.
+    On Android, saves to the app's external files directory which is visible
+    in the Files app without any extra permissions:
+    /sdcard/Android/data/<package>/files/leefmeter_export.xlsx
+
+    The package name is derived from FLET_APP_STORAGE_DATA so it works
+    regardless of the exact bundle ID used during the build.
+
     On desktop saves to ~/Downloads.
 
     Returns:
@@ -37,7 +43,19 @@ def get_export_path() -> Path:
     """
     import os
 
-    if os.environ.get("FLET_APP_STORAGE_DATA"):
+    env = os.environ.get("FLET_APP_STORAGE_DATA")
+    if env:
+        # Extract package name from internal storage path, e.g.
+        # /data/user/0/com.flet.leefmeter/files → com.flet.leefmeter
+        for part in Path(env).parts:
+            if "." in part and not part.startswith("/"):
+                external = Path(f"/sdcard/Android/data/{part}/files")
+                try:
+                    external.mkdir(parents=True, exist_ok=True)
+                    return external / "leefmeter_export.xlsx"
+                except OSError:
+                    break
+        # Fall back to internal storage if external not accessible
         return get_data_dir() / "leefmeter_export.xlsx"
     downloads = Path.home() / "Downloads"
     downloads.mkdir(parents=True, exist_ok=True)
