@@ -18,6 +18,8 @@ _PADDING_BOTTOM: float = 40.0
 _DOT_RADIUS: float = 6.0
 _DOT_INNER_RADIUS: float = 3.0
 _HOVER_RADIUS: float = 40.0
+_Y_MIN: int = -5
+_Y_MAX: int = 40
 _LABEL_FONT_SIZE: float = 10.0
 _TOOLTIP_FONT_SIZE: float = 11.0
 _AXIS_COLOR: str = ft.Colors.OUTLINE_VARIANT
@@ -173,17 +175,14 @@ class ChartView:
         plot_w = max(1.0, width - _PADDING_LEFT - _PADDING_RIGHT)
         plot_h = max(1.0, height - _PADDING_TOP - _PADDING_BOTTOM)
 
-        # Y-axis always starts at 0
-        min_val = 0
-        max_val = max(max(values), 1)
-
         def x_pos(i: int) -> float:
             if n == 1:
                 return _PADDING_LEFT + plot_w / 2
             return _PADDING_LEFT + (i / (n - 1)) * plot_w
 
         def y_pos(v: int) -> float:
-            return _PADDING_TOP + plot_h - (v / max_val) * plot_h
+            frac = (v - _Y_MIN) / (_Y_MAX - _Y_MIN)
+            return _PADDING_TOP + plot_h - frac * plot_h
 
         # "Punten" label — horizontal, above the y-axis
         self._canvas.shapes.append(
@@ -216,30 +215,29 @@ class ChartView:
             )
         )
 
-        # Horizontal grid lines at 25%, 50%, 75%, 100% of max
-        for fraction in (0.25, 0.50, 0.75, 1.0):
-            grid_y = _PADDING_TOP + plot_h - fraction * plot_h
+        # Horizontal grid lines at fixed y-values; zero line is slightly thicker
+        for tick in (-5, 0, 10, 20, 30, 40):
+            grid_y = y_pos(tick)
+            stroke = 1.0 if tick == 0 else 0.5
             self._canvas.shapes.append(
                 cv.Line(
                     x1=_PADDING_LEFT,
                     y1=grid_y,
                     x2=_PADDING_LEFT + plot_w,
                     y2=grid_y,
-                    paint=ft.Paint(color=_GRID_COLOR, stroke_width=0.5),
+                    paint=ft.Paint(color=_GRID_COLOR, stroke_width=stroke),
                 )
             )
 
-        # Area fill under the line
+        # Area fill under the line — base is the zero line so negatives fill downward
         if n >= 1:
             area_elements: list[cv.Path.PathElement] = [
-                cv.Path.MoveTo(x=x_pos(0), y=_PADDING_TOP + plot_h),
+                cv.Path.MoveTo(x=x_pos(0), y=y_pos(0)),
                 cv.Path.LineTo(x=x_pos(0), y=y_pos(values[0])),
             ]
             for i in range(1, n):
                 area_elements.append(cv.Path.LineTo(x=x_pos(i), y=y_pos(values[i])))
-            area_elements.append(
-                cv.Path.LineTo(x=x_pos(n - 1), y=_PADDING_TOP + plot_h)
-            )
+            area_elements.append(cv.Path.LineTo(x=x_pos(n - 1), y=y_pos(0)))
             area_elements.append(cv.Path.Close())
             self._canvas.shapes.append(
                 cv.Path(
@@ -298,14 +296,13 @@ class ChartView:
                     )
                 )
 
-        # Y-axis labels: 0 at bottom, max//2 in middle, max at top
-        mid_val = max_val // 2
-        for val in (min_val, mid_val, max_val):
+        # Y-axis labels at fixed tick values
+        for tick in (-5, 0, 10, 20, 30, 40):
             self._canvas.shapes.append(
                 cv.Text(
                     x=_PADDING_LEFT - 6,
-                    y=y_pos(val),
-                    value=str(val),
+                    y=y_pos(tick),
+                    value=str(tick),
                     style=ft.TextStyle(size=_LABEL_FONT_SIZE, color=_LABEL_COLOR),
                     text_align=ft.TextAlign.RIGHT,
                 )

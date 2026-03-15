@@ -446,6 +446,10 @@ class DayView:
         def on_cancel(ev: ft.ControlEvent) -> None:
             self._page.pop_dialog()
 
+        def open_manage(ev: ft.ControlEvent) -> None:
+            self._page.pop_dialog()
+            self._show_manage_templates_dialog()
+
         self._page.show_dialog(
             ft.AlertDialog(
                 modal=True,
@@ -459,6 +463,88 @@ class DayView:
                 actions=[
                     ft.TextButton("Annuleren", on_click=on_cancel),
                     ft.FilledButton("Opslaan", on_click=on_save),
+                    ft.TextButton(
+                        "Beheer activiteiten",
+                        icon=ft.Icons.LIST,
+                        on_click=open_manage,
+                    ),
+                ],
+            )
+        )
+
+    def _show_manage_templates_dialog(self) -> None:
+        """Open a dialog listing all activity templates grouped by category.
+
+        Each template row shows a delete button. Deleting a template closes
+        the dialog, removes the template, and reopens the dialog so the list
+        updates immediately.
+        """
+        templates = self._template_service.get_all_templates()
+
+        def make_delete_handler(t: Template) -> Callable[[ft.ControlEvent], None]:
+            """Return a click handler that deletes template *t*.
+
+            Args:
+                t: The template to delete when the handler is called.
+
+            Returns:
+                A sync event handler.
+            """
+
+            def handler(ev: ft.ControlEvent) -> None:
+                self._page.pop_dialog()
+                self._template_service.delete_template(t.id)
+                self._show_manage_templates_dialog()
+
+            return handler
+
+        sections: list[ft.Control] = []
+        for category in INTENSITY_LEVELS:
+            cat_templates = [t for t in templates if t.category == category]
+            if not cat_templates:
+                continue
+            sections.append(
+                ft.Text(
+                    _INTENSITY_LABELS[category],
+                    weight=ft.FontWeight.BOLD,
+                    color=ft.Colors.PRIMARY,
+                )
+            )
+            for tmpl in cat_templates:
+                sections.append(
+                    ft.Row(
+                        controls=[
+                            ft.Text(
+                                tmpl.name,
+                                expand=True,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.DELETE_OUTLINE,
+                                icon_size=16,
+                                on_click=make_delete_handler(tmpl),
+                            ),
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    )
+                )
+
+        self._page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Activiteiten beheren"),
+                content=ft.Column(
+                    controls=sections,
+                    scroll=ft.ScrollMode.AUTO,
+                    width=280,
+                    height=400,
+                    spacing=4,
+                ),
+                actions=[
+                    ft.TextButton(
+                        "Sluiten",
+                        on_click=lambda _: self._page.pop_dialog(),
+                    ),
                 ],
             )
         )
