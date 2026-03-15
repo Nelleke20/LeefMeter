@@ -12,7 +12,7 @@ from src.models.template import Template
 from src.services.activity_service import ActivityService
 from src.services.settings_service import SettingsService
 from src.services.template_service import TemplateService
-from src.views.nav_bar import build_nav_rail
+from src.views.nav_bar import build_nav_drawer, open_nav_drawer
 
 _CATEGORY_COLORS: dict[str, str] = {
     "rust": ft.Colors.BLUE_200,
@@ -181,6 +181,9 @@ class DayView:
     def _on_slot_tap(self, slot_idx: int) -> Callable[[ft.ControlEvent], None]:
         """Return a click handler for a single time slot.
 
+        Tapping the first slot of an activity deletes the whole activity.
+        Tapping a later slot truncates the activity up to (not including) that slot.
+
         Args:
             slot_idx: Index of the tapped slot.
 
@@ -190,7 +193,12 @@ class DayView:
 
         def handler(e: ft.ControlEvent) -> None:
             if slot_idx in self._slot_to_activity:
-                self._show_delete_dialog(self._slot_to_activity[slot_idx])
+                activity = self._slot_to_activity[slot_idx]
+                first_slot = self._time_str_to_slot(activity.start_time or "")
+                if first_slot == slot_idx:
+                    self._show_delete_dialog(activity)
+                else:
+                    self._show_truncate_dialog(activity, slot_idx)
                 return
             if slot_idx in self._selected_slots:
                 self._selected_slots.remove(slot_idx)
@@ -203,7 +211,7 @@ class DayView:
         return handler
 
     def _show_delete_dialog(self, activity: Activity) -> None:
-        """Open a confirmation dialog to delete an activity.
+        """Open a confirmation dialog to delete the whole activity.
 
         Args:
             activity: The activity to delete.
@@ -227,6 +235,41 @@ class DayView:
                 actions=[
                     ft.TextButton("Annuleren", on_click=cancel),
                     ft.FilledButton("Verwijderen", on_click=do_delete),
+                ],
+            )
+        )
+
+    def _show_truncate_dialog(self, activity: Activity, from_slot: int) -> None:
+        """Open a dialog to truncate an activity from a given slot onward.
+
+        Args:
+            activity: The activity to shorten.
+            from_slot: The slot index at which to start truncating.
+        """
+        first_slot = self._time_str_to_slot(activity.start_time or "") or 0
+        new_duration = (from_slot - first_slot) * 30
+        remove_duration = activity.duration_minutes - new_duration
+
+        def do_truncate(e: ft.ControlEvent) -> None:
+            activity.duration_minutes = new_duration
+            self._service.update_activity(activity)
+            self._page.pop_dialog()
+            self._refresh()
+
+        def cancel(e: ft.ControlEvent) -> None:
+            self._page.pop_dialog()
+
+        self._page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                title=ft.Text(f"Verwijder laatste {remove_duration} min?"),
+                content=ft.Text(
+                    f"'{activity.name}' wordt ingekort van "
+                    f"{activity.duration_minutes} naar {new_duration} min."
+                ),
+                actions=[
+                    ft.TextButton("Annuleren", on_click=cancel),
+                    ft.FilledButton("Inkorten", on_click=do_truncate),
                 ],
             )
         )
@@ -344,6 +387,16 @@ class DayView:
             )
         )
 
+    # ── drawer ────────────────────────────────────────────────────────────────
+
+    def _open_drawer(self, e: ft.ControlEvent) -> None:
+        """Open the navigation drawer.
+
+        Args:
+            e: Click event from the menu button.
+        """
+        open_nav_drawer(self._page)
+
     # ── settings ──────────────────────────────────────────────────────────────
 
     def _open_settings(self, e: ft.ControlEvent) -> None:
@@ -448,6 +501,14 @@ class DayView:
                     ],
                     spacing=4,
                 )
+            else:
+                content = ft.Row(
+                    controls=[
+                        ft.Container(expand=True),
+                        ft.Text("✕", size=9, color=ft.Colors.ON_SURFACE_VARIANT),
+                    ],
+                    spacing=4,
+                )
 
         container = ft.Container(
             bgcolor=self._slot_color(slot_idx),
@@ -502,10 +563,18 @@ class DayView:
                             ft.Row(
                                 controls=[
                                     ft.IconButton(
+                                        icon=ft.Icons.MENU,
+                                        on_click=self._open_drawer,
+                                        icon_size=20,
+                                    ),
+                                    ft.IconButton(
                                         icon=ft.Icons.CHEVRON_LEFT,
                                         on_click=lambda _: self._page.run_task(
                                             self._page.push_route,
-                                            f"/day/{(self._date - timedelta(days=1)).isoformat()}",
+                                            "/day/"
+                                            + (
+                                                self._date - timedelta(days=1)
+                                            ).isoformat(),
                                         ),
                                         icon_size=20,
                                     ),
@@ -527,7 +596,10 @@ class DayView:
                                         icon=ft.Icons.CHEVRON_RIGHT,
                                         on_click=lambda _: self._page.run_task(
                                             self._page.push_route,
-                                            f"/day/{(self._date + timedelta(days=1)).isoformat()}",
+                                            "/day/"
+                                            + (
+                                                self._date + timedelta(days=1)
+                                            ).isoformat(),
                                         ),
                                         icon_size=20,
                                     ),
@@ -546,27 +618,15 @@ class DayView:
             ],
             expand=True,
         )
-        return ft.View(
+        view = ft.View(
             route=f"/day/{self._date.isoformat()}",
             padding=0,
-            controls=[
-                ft.Row(
-                    controls=[
-                        build_nav_rail(
-                            self._page,
-                            selected_index=0,
-                            year=self._date.year,
-                            month=self._date.month,
-                        ),
-                        ft.VerticalDivider(
-                            width=1,
-                            thickness=1,
-                            color=ft.Colors.OUTLINE_VARIANT,
-                        ),
-                        content_column,
-                    ],
-                    expand=True,
-                    spacing=0,
-                )
-            ],
+            controls=[content_column],
         )
+        view.drawer = build_nav_drawer(
+            self._page,
+            selected_index=0,
+            year=self._date.year,
+            month=self._date.month,
+        )
+        return view

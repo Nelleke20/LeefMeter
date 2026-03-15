@@ -21,6 +21,8 @@ A higher total means a more demanding day. Color thresholds on the calendar (gre
 
 ![LeefMeter logo](assets/logo.svg)
 
+The app icon (`icon.png`) is used as the launcher icon when building for Android/iOS.
+
 ---
 
 ## Architecture
@@ -32,7 +34,7 @@ See [`assets/architecture.drawio`](assets/architecture.drawio) for the full diag
 | `src/models/` | — | `Activity`, `Day`, `Template`, `DayTemplate`, `AppSettings` dataclasses |
 | `src/repositories/` | Repository | `ActivityRepository` ABC → `JsonRepository`, `TemplateRepository`, `DayTemplateRepository` |
 | `src/services/` | Strategy | `IntensityPointStrategy`; `ActivityService`, `TemplateService`, `DayTemplateService`, `ExportService`, `SettingsService` |
-| `src/views/` | — | `MonthView`, `DayView`, `DayTemplatesView`, `DayTemplateEditView`, `ExportView`, `ChartView`; shared `nav_bar` |
+| `src/views/` | — | `HomeView`, `MonthView`, `DayView`, `DayTemplatesView`, `DayTemplateEditView`, `ExportView`, `ChartView`; shared `nav_bar` |
 | `src/app.py` | — | Flet entry point with client-side routing |
 
 ---
@@ -71,8 +73,9 @@ LeefMeter/
 │       ├── day_templates_view.py     # List/create/delete day templates
 │       ├── day_template_edit_view.py # Edit template (same grid as DayView)
 │       ├── export_view.py      # Excel export with calendar date range picker
-│       ├── chart_view.py       # Line chart: points per day
-│       └── nav_bar.py          # Shared left navigation rail
+│       ├── home_view.py        # Landing screen with logo, title, intro
+│       ├── chart_view.py       # Line chart: points per day (with area fill and tap tooltip)
+│       └── nav_bar.py          # Shared dismissible navigation drawer
 ├── tests/
 │   ├── test_models.py
 │   ├── test_strategies.py
@@ -87,15 +90,18 @@ LeefMeter/
 
 ## Navigation
 
-The app uses a **left-side NavigationRail** with five tabs:
+The app starts on the **Home screen** (`/`) and uses a **dismissible NavigationDrawer** (hamburger icon) to switch between views. Tapping a destination closes the drawer automatically.
 
 | # | Tab | Route | Description |
 |---|---|---|---|
+| — | Home | `/` | Landing screen with logo, title, and intro. Always shown on startup. |
 | 0 | Dag | `/day/<date>` | Half-hour time grid; tap blocks to log activities |
 | 1 | Maand | `/month/<year>/<month>` | Calendar overview with color-coded point totals |
 | 2 | Templates | `/day-templates` | Save and apply full-day schedule templates |
 | 3 | Exporteren | `/export` | Export to Excel with a date range picker |
-| 4 | Grafiek | `/chart` | Line chart of total points per day |
+| 4 | Grafiek | `/chart` | Line chart of total points per day with area fill and tap tooltips |
+
+The drawer header ("LeefMeter" + icon) is also clickable and navigates back to the home screen.
 
 ---
 
@@ -158,11 +164,11 @@ python -m src.app
 ## Mobile Build
 
 ```bash
-# Android
-flet build apk
+# Android (includes app icon)
+flet build apk --icon icon.png
 
-# iOS (requires macOS + Xcode)
-flet build ipa
+# iOS (requires macOS + Xcode + Apple Developer account)
+flet build ipa --icon icon.png
 ```
 
 ---

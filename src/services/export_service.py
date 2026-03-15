@@ -169,4 +169,3 @@ class ExportService:
             ws.cell(row=row_idx, column=2, value=name)
 
         _set_col_widths(ws)
-

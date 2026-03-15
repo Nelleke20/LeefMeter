@@ -12,7 +12,7 @@ from src.models.day import Day
 from src.models.settings import AppSettings
 from src.services.activity_service import ActivityService
 from src.services.settings_service import SettingsService
-from src.views.nav_bar import build_nav_rail
+from src.views.nav_bar import build_nav_drawer, open_nav_drawer
 
 _JANUARY: int = 1
 _DECEMBER: int = 12
@@ -221,7 +221,12 @@ class MonthView:
                     controls=[
                         ft.Row(
                             controls=[
-                                ft.Container(width=16, height=16, bgcolor=_COLOR_GREEN, border_radius=4),
+                                ft.Container(
+                                    width=16,
+                                    height=16,
+                                    bgcolor=_COLOR_GREEN,
+                                    border_radius=4,
+                                ),
                                 green_field,
                             ],
                             spacing=8,
@@ -229,7 +234,12 @@ class MonthView:
                         ),
                         ft.Row(
                             controls=[
-                                ft.Container(width=16, height=16, bgcolor=_COLOR_ORANGE, border_radius=4),
+                                ft.Container(
+                                    width=16,
+                                    height=16,
+                                    bgcolor=_COLOR_ORANGE,
+                                    border_radius=4,
+                                ),
                                 orange_field,
                             ],
                             spacing=8,
@@ -237,7 +247,12 @@ class MonthView:
                         ),
                         ft.Row(
                             controls=[
-                                ft.Container(width=16, height=16, bgcolor=_COLOR_RED, border_radius=4),
+                                ft.Container(
+                                    width=16,
+                                    height=16,
+                                    bgcolor=_COLOR_RED,
+                                    border_radius=4,
+                                ),
                                 red_field,
                             ],
                             spacing=8,
@@ -358,6 +373,11 @@ class MonthView:
         return ft.Row(
             controls=[
                 ft.IconButton(
+                    icon=ft.Icons.MENU,
+                    on_click=lambda _: open_nav_drawer(self._page),
+                    icon_size=20,
+                ),
+                ft.IconButton(
                     icon=ft.Icons.CHEVRON_LEFT,
                     on_click=self._on_prev(),
                 ),
@@ -404,27 +424,15 @@ class MonthView:
             ],
             expand=True,
         )
-        return ft.View(
+        view = ft.View(
             route=f"/month/{self._year}/{self._month}",
             padding=0,
-            controls=[
-                ft.Row(
-                    controls=[
-                        build_nav_rail(
-                            self._page,
-                            selected_index=1,
-                            year=self._year,
-                            month=self._month,
-                        ),
-                        ft.VerticalDivider(
-                            width=1,
-                            thickness=1,
-                            color=ft.Colors.OUTLINE_VARIANT,
-                        ),
-                        content_column,
-                    ],
-                    expand=True,
-                    spacing=0,
-                )
-            ],
+            controls=[content_column],
         )
+        view.drawer = build_nav_drawer(
+            self._page,
+            selected_index=1,
+            year=self._year,
+            month=self._month,
+        )
+        return view

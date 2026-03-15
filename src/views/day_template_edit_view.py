@@ -11,12 +11,9 @@ from src.models.activity import INTENSITY_LEVELS
 from src.models.day_template import DayTemplate, DayTemplateEntry
 from src.models.template import Template
 from src.services.day_template_service import DayTemplateService
+from src.services.settings_service import SettingsService
 from src.services.template_service import TemplateService
-from src.views.nav_bar import build_nav_rail
-
-_START_HOUR: int = 6
-_END_HOUR: int = 22
-_SLOT_COUNT: int = (_END_HOUR - _START_HOUR) * 2
+from src.views.nav_bar import build_nav_drawer, open_nav_drawer
 
 _CATEGORY_COLORS: dict[str, str] = {
     "rust": ft.Colors.BLUE_200,
@@ -51,6 +48,7 @@ class DayTemplateEditView:
         template: DayTemplate,
         day_template_service: DayTemplateService,
         template_service: TemplateService,
+        settings_service: SettingsService,
     ) -> None:
         """Initialise with template and required services.
 
@@ -59,36 +57,20 @@ class DayTemplateEditView:
             template: The day template being edited.
             day_template_service: Used to persist changes to the template.
             template_service: Used to load and save activity name definitions.
+            settings_service: Used to load day start/end hours.
         """
         self._page = page
         self._template = template
         self._dts = day_template_service
         self._ts = template_service
+        settings = settings_service.load()
+        self._start_hour: int = settings.day_start_hour
+        self._end_hour: int = settings.day_end_hour
+        self._slot_count: int = (self._end_hour - self._start_hour) * 2
         self._selected_slots: set[int] = set()
         self._slot_containers: list[ft.Container] = []
         self._slot_to_entry: dict[int, DayTemplateEntry] = {}
 
-        self._category_dd = ft.Dropdown(
-            label="Categorie",
-            options=[
-                ft.dropdown.Option(key=lvl, text=_INTENSITY_LABELS[lvl])
-                for lvl in INTENSITY_LEVELS
-            ],
-            border_radius=12,
-            on_select=self._on_category_change,
-        )
-        self._activity_dd = ft.Dropdown(
-            label="Activiteit",
-            options=[],
-            border_radius=12,
-            on_select=self._on_activity_change,
-        )
-        self._new_name_field = ft.TextField(
-            label="Naam nieuwe activiteit",
-            border_radius=12,
-            visible=False,
-        )
-        self._dialog_error = ft.Text(value="", color=ft.Colors.ERROR)
         self._add_btn = ft.FilledButton(
             "Voeg activiteit toe",
             icon=ft.Icons.ADD,
@@ -108,7 +90,7 @@ class DayTemplateEditView:
         Returns:
             Time string like "08:30".
         """
-        total = _START_HOUR * 60 + slot_idx * 30
+        total = self._start_hour * 60 + slot_idx * 30
         return f"{total // 60:02d}:{total % 60:02d}"
 
     def _time_str_to_slot(self, time_str: str) -> int | None:
@@ -122,8 +104,8 @@ class DayTemplateEditView:
         """
         try:
             h, m = map(int, time_str.split(":"))
-            slot = (h * 60 + m - _START_HOUR * 60) // 30
-            return slot if 0 <= slot < _SLOT_COUNT else None
+            slot = (h * 60 + m - self._start_hour * 60) // 30
+            return slot if 0 <= slot < self._slot_count else None
         except (ValueError, AttributeError):
             return None
 
@@ -139,7 +121,7 @@ class DayTemplateEditView:
             if start is None:
                 continue
             for i in range(max(1, entry.duration_minutes // 30)):
-                if 0 <= start + i < _SLOT_COUNT:
+                if 0 <= start + i < self._slot_count:
                     result[start + i] = entry
         return result
 
@@ -171,7 +153,7 @@ class DayTemplateEditView:
         self._slot_to_entry = self._build_slot_to_entry_map()
         self._slot_containers = []
         self._slots_list.controls = [
-            self._build_slot_row(i) for i in range(_SLOT_COUNT)
+            self._build_slot_row(i) for i in range(self._slot_count)
         ]
         self._selected_slots.clear()
         self._add_btn.visible = False
@@ -231,75 +213,83 @@ class DayTemplateEditView:
             )
         )
 
-    def _on_category_change(self, e: ft.ControlEvent) -> None:
-        """Repopulate the activity dropdown when category changes.
-
-        Args:
-            e: Select event from the category dropdown.
-        """
-        templates = self._ts.get_all_templates()
-        self._activity_dd.options = [
-            ft.dropdown.Option(key=t.name, text=t.name)
-            for t in templates
-            if t.category == self._category_dd.value
-        ] + [ft.dropdown.Option(key=_NEW_ACTIVITY_KEY, text="+ Nieuwe activiteit")]
-        self._activity_dd.value = None
-        self._new_name_field.visible = False
-        self._page.update()
-
-    def _on_activity_change(self, e: ft.ControlEvent) -> None:
-        """Show/hide the new-name field.
-
-        Args:
-            e: Select event from the activity dropdown.
-        """
-        self._new_name_field.visible = self._activity_dd.value == _NEW_ACTIVITY_KEY
-        self._page.update()
-
     def _on_add_tap(self, e: ft.ControlEvent) -> None:
         """Open the add-activity dialog for the selected slots.
+
+        Creates fresh controls each call so no stale values appear.
 
         Args:
             e: Click event from the add button.
         """
-        self._category_dd.value = None
-        self._activity_dd.options = []
-        self._activity_dd.value = None
-        self._new_name_field.value = ""
-        self._new_name_field.visible = False
-        self._dialog_error.value = ""
-
         sorted_slots = sorted(self._selected_slots)
         start_time = self._slot_to_time_str(sorted_slots[0])
         duration_minutes = len(sorted_slots) * 30
 
-        def on_save(e: ft.ControlEvent) -> None:
-            if not self._category_dd.value:
-                self._dialog_error.value = "Kies een categorie."
+        category_dd = ft.Dropdown(
+            label="Categorie",
+            options=[
+                ft.dropdown.Option(key=lvl, text=_INTENSITY_LABELS[lvl])
+                for lvl in INTENSITY_LEVELS
+            ],
+            border_radius=12,
+        )
+        activity_dd = ft.Dropdown(
+            label="Activiteit",
+            options=[],
+            border_radius=12,
+        )
+        new_name_field = ft.TextField(
+            label="Naam nieuwe activiteit",
+            border_radius=12,
+            visible=False,
+        )
+        error_text = ft.Text(value="", color=ft.Colors.ERROR)
+
+        def on_category_change(ev: ft.ControlEvent) -> None:
+            templates = self._ts.get_all_templates()
+            activity_dd.options = [
+                ft.dropdown.Option(key=t.name, text=t.name)
+                for t in templates
+                if t.category == category_dd.value
+            ] + [ft.dropdown.Option(key=_NEW_ACTIVITY_KEY, text="+ Nieuwe activiteit")]
+            activity_dd.value = None
+            new_name_field.visible = False
+            self._page.update()
+
+        def on_activity_change(ev: ft.ControlEvent) -> None:
+            new_name_field.visible = activity_dd.value == _NEW_ACTIVITY_KEY
+            self._page.update()
+
+        category_dd.on_select = on_category_change
+        activity_dd.on_select = on_activity_change
+
+        def on_save(ev: ft.ControlEvent) -> None:
+            if not category_dd.value:
+                error_text.value = "Kies een categorie."
                 self._page.update()
                 return
-            if not self._activity_dd.value:
-                self._dialog_error.value = "Kies een activiteit."
+            if not activity_dd.value:
+                error_text.value = "Kies een activiteit."
                 self._page.update()
                 return
-            if self._activity_dd.value == _NEW_ACTIVITY_KEY:
-                name = (self._new_name_field.value or "").strip()
+            if activity_dd.value == _NEW_ACTIVITY_KEY:
+                name = (new_name_field.value or "").strip()
                 if not name:
-                    self._dialog_error.value = "Vul een naam in."
+                    error_text.value = "Vul een naam in."
                     self._page.update()
                     return
                 self._ts.add_template(
                     Template(
                         name=name,
-                        category=self._category_dd.value,  # type: ignore[arg-type]
+                        category=category_dd.value,  # type: ignore[arg-type]
                         duration_minutes=30,
                     )
                 )
             else:
-                name = self._activity_dd.value  # type: ignore[assignment]
+                name = activity_dd.value  # type: ignore[assignment]
             entry = DayTemplateEntry(
                 activity_name=name,
-                category=self._category_dd.value,  # type: ignore[arg-type]
+                category=category_dd.value,  # type: ignore[arg-type]
                 start_time=start_time,
                 duration_minutes=duration_minutes,
             )
@@ -309,7 +299,7 @@ class DayTemplateEditView:
             self._page.pop_dialog()
             self._refresh()
 
-        def on_cancel(e: ft.ControlEvent) -> None:
+        def on_cancel(ev: ft.ControlEvent) -> None:
             self._page.pop_dialog()
 
         self._page.show_dialog(
@@ -322,10 +312,10 @@ class DayTemplateEditView:
                             f"{start_time}  ·  {duration_minutes} min",
                             color=ft.Colors.PRIMARY,
                         ),
-                        self._category_dd,
-                        self._activity_dd,
-                        self._new_name_field,
-                        self._dialog_error,
+                        category_dd,
+                        activity_dd,
+                        new_name_field,
+                        error_text,
                     ],
                     spacing=12,
                     tight=True,
@@ -430,7 +420,7 @@ class DayTemplateEditView:
         self._slot_to_entry = self._build_slot_to_entry_map()
         self._slot_containers = []
         self._slots_list.controls = [
-            self._build_slot_row(i) for i in range(_SLOT_COUNT)
+            self._build_slot_row(i) for i in range(self._slot_count)
         ]
 
         content_column = ft.Column(
@@ -441,10 +431,16 @@ class DayTemplateEditView:
                             ft.Row(
                                 controls=[
                                     ft.IconButton(
+                                        icon=ft.Icons.MENU,
+                                        on_click=lambda _: open_nav_drawer(self._page),
+                                        icon_size=20,
+                                    ),
+                                    ft.IconButton(
                                         icon=ft.Icons.ARROW_BACK,
                                         on_click=lambda _: self._page.run_task(
                                             self._page.push_route, "/day-templates"
                                         ),
+                                        icon_size=20,
                                     ),
                                     ft.Text(
                                         self._template.name,
@@ -466,27 +462,15 @@ class DayTemplateEditView:
             ],
             expand=True,
         )
-        return ft.View(
+        view = ft.View(
             route=f"/day-templates/edit/{self._template.id}",
             padding=0,
-            controls=[
-                ft.Row(
-                    controls=[
-                        build_nav_rail(
-                            self._page,
-                            selected_index=_NAV_INDEX,
-                            year=today.year,
-                            month=today.month,
-                        ),
-                        ft.VerticalDivider(
-                            width=1,
-                            thickness=1,
-                            color=ft.Colors.OUTLINE_VARIANT,
-                        ),
-                        content_column,
-                    ],
-                    expand=True,
-                    spacing=0,
-                )
-            ],
+            controls=[content_column],
         )
+        view.drawer = build_nav_drawer(
+            self._page,
+            selected_index=_NAV_INDEX,
+            year=today.year,
+            month=today.month,
+        )
+        return view

@@ -8,7 +8,7 @@ from pathlib import Path
 import flet as ft
 
 from src.services.export_service import ExportService
-from src.views.nav_bar import build_nav_rail
+from src.views.nav_bar import build_nav_drawer, open_nav_drawer
 
 _EXPORT_PATH: Path = Path.home() / "Downloads" / "leefmeter_export.xlsx"
 _NO_DATE: str = "Geen datum"
@@ -129,10 +129,20 @@ class ExportView:
                 ft.Container(
                     content=ft.Column(
                         controls=[
-                            ft.Text(
-                                "Exporteren",
-                                size=20,
-                                weight=ft.FontWeight.BOLD,
+                            ft.Row(
+                                controls=[
+                                    ft.IconButton(
+                                        icon=ft.Icons.MENU,
+                                        on_click=lambda _: open_nav_drawer(self._page),
+                                        icon_size=20,
+                                    ),
+                                    ft.Text(
+                                        "Exporteren",
+                                        size=20,
+                                        weight=ft.FontWeight.BOLD,
+                                        expand=True,
+                                    ),
+                                ],
                             ),
                             ft.Row(
                                 controls=[
@@ -149,7 +159,9 @@ class ExportView:
                                             ),
                                             self._from_label,
                                         ],
-                                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                        horizontal_alignment=(
+                                            ft.CrossAxisAlignment.CENTER
+                                        ),
                                         spacing=4,
                                     ),
                                     ft.Column(
@@ -165,7 +177,9 @@ class ExportView:
                                             ),
                                             self._to_label,
                                         ],
-                                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                        horizontal_alignment=(
+                                            ft.CrossAxisAlignment.CENTER
+                                        ),
                                         spacing=4,
                                     ),
                                 ],
@@ -188,27 +202,15 @@ class ExportView:
             ],
             expand=True,
         )
-        return ft.View(
+        view = ft.View(
             route="/export",
             padding=0,
-            controls=[
-                ft.Row(
-                    controls=[
-                        build_nav_rail(
-                            self._page,
-                            selected_index=3,
-                            year=today.year,
-                            month=today.month,
-                        ),
-                        ft.VerticalDivider(
-                            width=1,
-                            thickness=1,
-                            color=ft.Colors.OUTLINE_VARIANT,
-                        ),
-                        content_column,
-                    ],
-                    expand=True,
-                    spacing=0,
-                )
-            ],
+            controls=[content_column],
         )
+        view.drawer = build_nav_drawer(
+            self._page,
+            selected_index=3,
+            year=today.year,
+            month=today.month,
+        )
+        return view

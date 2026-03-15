@@ -20,12 +20,17 @@ from src.views.day_template_edit_view import DayTemplateEditView
 from src.views.day_templates_view import DayTemplatesView
 from src.views.day_view import DayView
 from src.views.export_view import ExportView
+from src.views.home_view import HomeView
 from src.views.month_view import MonthView
 
 
-def _build_services() -> (
-    tuple[ActivityService, TemplateService, DayTemplateService, ExportService, SettingsService]
-):
+def _build_services() -> tuple[
+    ActivityService,
+    TemplateService,
+    DayTemplateService,
+    ExportService,
+    SettingsService,
+]:
     """Construct all application services with their dependencies.
 
     Returns:
@@ -62,7 +67,12 @@ def _with_safe_area(view: ft.View) -> ft.View:
         The same view with SafeArea applied around each top-level control.
     """
     view.controls = [
-        ft.SafeArea(content=ctrl, expand=True) for ctrl in view.controls
+        ft.SafeArea(
+            content=ctrl,  # type: ignore[arg-type]
+            expand=True,
+            maintain_bottom_view_padding=True,
+        )
+        for ctrl in view.controls
     ]
     return view
 
@@ -90,6 +100,8 @@ def _resolve_view(
     Returns:
         The matching View, falling back to the current month view.
     """
+    if route == "/":
+        return _with_safe_area(HomeView(page).build())
     if route.startswith("/day/"):
         day_date = date.fromisoformat(route.split("/day/")[1])
         return _with_safe_area(
@@ -114,19 +126,18 @@ def _resolve_view(
         if template is not None:
             return _with_safe_area(
                 DayTemplateEditView(
-                    page, template, day_template_service, template_service
+                    page,
+                    template,
+                    day_template_service,
+                    template_service,
+                    settings_service,
                 ).build()
             )
     if route == "/chart":
         return _with_safe_area(ChartView(page, activity_service).build())
     if route == "/export":
         return _with_safe_area(ExportView(page, export_service).build())
-    today = date.today()
-    return _with_safe_area(
-        MonthView(
-            page, activity_service, today.year, today.month, settings_service
-        ).build()
-    )
+    return _with_safe_area(HomeView(page).build())
 
 
 async def main(page: ft.Page) -> None:
@@ -166,13 +177,12 @@ async def main(page: ft.Page) -> None:
     async def on_view_pop(e: ft.ViewPopEvent) -> None:
         page.views.pop()
         if page.views:
-            await page.push_route(page.views[-1].route)  # type: ignore[arg-type]
+            await page.push_route(page.views[-1].route)
 
     page.on_route_change = on_route_change
     page.on_view_pop = on_view_pop
 
-    today = date.today()
-    initial_route = f"/month/{today.year}/{today.month}"
+    initial_route = "/"
     page.views.clear()
     page.views.append(
         _resolve_view(
