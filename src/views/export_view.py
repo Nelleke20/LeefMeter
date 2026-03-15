@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 
 import flet as ft
 
 from src.services.export_service import ExportService
 from src.views.nav_bar import build_nav_drawer, open_nav_drawer
 
-_EXPORT_PATH: Path = Path.home() / "Downloads" / "leefmeter_export.xlsx"
 _NO_DATE: str = "Geen datum"
 
 
@@ -18,7 +16,8 @@ class ExportView:
     """Lets the user export all activity data to an Excel file.
 
     Date range can be selected via a calendar date picker.
-    The Excel file is saved to ~/Downloads.
+    The Excel file is saved to the app's private storage on Android/iOS,
+    or ~/Downloads on desktop.
     """
 
     def __init__(self, page: ft.Page, export_service: ExportService) -> None:
@@ -101,7 +100,6 @@ class ExportView:
         """
         try:
             path = self._export_service.export(
-                output_path=_EXPORT_PATH,
                 from_date=self._from_date,
                 to_date=self._to_date,
             )

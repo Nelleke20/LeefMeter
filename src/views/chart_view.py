@@ -17,7 +17,7 @@ _PADDING_TOP: float = 32.0
 _PADDING_BOTTOM: float = 40.0
 _DOT_RADIUS: float = 6.0
 _DOT_INNER_RADIUS: float = 3.0
-_HOVER_RADIUS: float = 20.0
+_HOVER_RADIUS: float = 40.0
 _LABEL_FONT_SIZE: float = 10.0
 _TOOLTIP_FONT_SIZE: float = 11.0
 _AXIS_COLOR: str = ft.Colors.OUTLINE_VARIANT
@@ -121,9 +121,28 @@ class ChartView:
         Args:
             e: TapEvent with local_x and local_y coordinates.
         """
-        x: float = getattr(e, "local_x", 0.0)
-        y: float = getattr(e, "local_y", 0.0)
-        self._handle_pointer(x, y)
+        self._handle_pointer(e.local_x, e.local_y)
+
+    def _on_tap(self, e: ft.ControlEvent) -> None:
+        """Clear the active tooltip when the user taps away from a data point.
+
+        Args:
+            e: Tap event (coordinates not used — always clears the tooltip).
+        """
+        if self._active_hover is not None:
+            self._active_hover = None
+            self._redraw()
+            self._page.update()
+
+    def _on_long_press_start(  # type: ignore[type-arg]
+        self, e: ft.LongPressStartEvent
+    ) -> None:
+        """Show the tooltip on long-press, mirroring tap-down behaviour.
+
+        Args:
+            e: LongPressStartEvent with local_x and local_y coordinates.
+        """
+        self._handle_pointer(e.local_x, e.local_y)
 
     def _redraw(self) -> None:
         """Rebuild canvas shapes for the base chart plus any active tooltip."""
@@ -345,6 +364,8 @@ class ChartView:
                 mouse_cursor=ft.MouseCursor.BASIC,
                 on_hover=self._on_hover,  # type: ignore[arg-type]
                 on_tap_down=self._on_tap_down,
+                on_tap=self._on_tap,
+                on_long_press_start=self._on_long_press_start,  # type: ignore[arg-type]
                 content=self._canvas,
                 expand=True,
             )
