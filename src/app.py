@@ -16,6 +16,8 @@ from src.services.point_strategy import IntensityPointStrategy
 from src.services.settings_service import SettingsService
 from src.services.template_service import TemplateService
 from src.views.chart_view import ChartView
+from src.views.feedback_view import FeedbackView
+from src.views.manage_activities_view import ManageActivitiesView
 from src.views.day_template_edit_view import DayTemplateEditView
 from src.views.day_templates_view import DayTemplatesView
 from src.views.day_view import DayView
@@ -46,7 +48,9 @@ def _build_services() -> tuple[
     )
     template_service = TemplateService(repository=template_repo)
     day_template_service = DayTemplateService(repository=day_template_repo)
-    export_service = ExportService(repository=activity_repo)
+    export_service = ExportService(
+        repository=activity_repo, template_service=template_service
+    )
     settings_service = SettingsService()
     return (
         activity_service,
@@ -134,9 +138,15 @@ def _resolve_view(
                 ).build()
             )
     if route == "/chart":
-        return _with_safe_area(ChartView(page, activity_service).build())
+        return _with_safe_area(
+            ChartView(page, activity_service, settings_service).build()
+        )
     if route == "/export":
         return _with_safe_area(ExportView(page, export_service).build())
+    if route == "/feedback":
+        return _with_safe_area(FeedbackView(page).build())
+    if route == "/manage-activities":
+        return _with_safe_area(ManageActivitiesView(page, template_service).build())
     return _with_safe_area(HomeView(page).build())
 
 
@@ -174,10 +184,10 @@ async def main(page: ft.Page) -> None:
         )
         page.update()
 
-    async def on_view_pop(e: ft.ViewPopEvent) -> None:
+    def on_view_pop(e: ft.ViewPopEvent) -> None:
         page.views.pop()
         if page.views:
-            await page.push_route(page.views[-1].route)
+            page.run_task(page.push_route, page.views[-1].route)
 
     page.on_route_change = on_route_change
     page.on_view_pop = on_view_pop

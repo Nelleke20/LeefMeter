@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from datetime import date
 
 import flet as ft
@@ -93,8 +95,77 @@ class ExportView:
         self._to_picker.open = True
         self._page.update()
 
+    def _open_android_settings(self, e: ft.ControlEvent) -> None:
+        """Open Android app-permissions settings so the user can grant storage.
+
+        Only effective on Android. Launches the system settings page for
+        managing all-files access for this app.
+
+        Args:
+            e: Click event from the settings button.
+        """
+        try:
+            subprocess.Popen(
+                [
+                    "am",
+                    "start",
+                    "-a",
+                    "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION",
+                    "-d",
+                    "package:com.flet.leefmeter",
+                ]
+            )
+        except Exception:
+            subprocess.Popen(  # type: ignore[call-overload]
+                [
+                    "am",
+                    "start",
+                    "-a",
+                    "android.settings.APPLICATION_DETAILS_SETTINGS",
+                    "-d",
+                    "package:com.flet.leefmeter",
+                ]
+            )
+        self._page.pop_dialog()
+
+    def _show_permission_dialog(self) -> None:
+        """Show a dialog explaining how to grant storage permission on Android."""
+        self._page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Toegang tot Bestanden vereist"),
+                content=ft.Column(
+                    controls=[
+                        ft.Text(
+                            "Om op te slaan in Documenten heeft de app "
+                            "'Toegang tot alle bestanden' nodig.\n\n"
+                            "Tik op 'Open instellingen', zoek 'Toegang tot "
+                            "alle bestanden' en zet deze aan voor LeefMeter.",
+                            size=13,
+                        ),
+                    ],
+                    tight=True,
+                    width=280,
+                ),
+                actions=[
+                    ft.TextButton(
+                        "Annuleren",
+                        on_click=lambda _: self._page.pop_dialog(),
+                    ),
+                    ft.FilledButton(
+                        "Open instellingen",
+                        icon=ft.Icons.SETTINGS,
+                        on_click=self._open_android_settings,  # type: ignore[arg-type]
+                    ),
+                ],
+            )
+        )
+
     def _on_export(self, e: ft.ControlEvent) -> None:
         """Generate the Excel file and show the save path.
+
+        On Android, if saving to Documents fails due to missing permissions,
+        shows a dialog guiding the user to grant storage access.
 
         Args:
             e: Click event from the export button.
@@ -106,10 +177,19 @@ class ExportView:
             )
             self._status_text.color = ft.Colors.PRIMARY
             self._status_text.value = f"Opgeslagen: {path}"
+            self._page.update()
+        except PermissionError:
+            self._page.update()
+            if os.environ.get("FLET_APP_STORAGE_DATA"):
+                self._show_permission_dialog()
+            else:
+                self._status_text.color = ft.Colors.ERROR
+                self._status_text.value = "Geen toegang tot de opslagmap."
+                self._page.update()
         except Exception as exc:
             self._status_text.color = ft.Colors.ERROR
             self._status_text.value = f"Fout: {exc}"
-        self._page.update()
+            self._page.update()
 
     def build(self) -> ft.View:
         """Compose and return the full Flet View for the export screen.
@@ -123,9 +203,12 @@ class ExportView:
         if self._to_picker not in self._page.overlay:
             self._page.overlay.append(self._to_picker)
 
-        save_path = get_export_path()
+        if os.environ.get("FLET_APP_STORAGE_DATA"):
+            hint_text = "Wordt opgeslagen in: Interne opslag > Documenten"
+        else:
+            hint_text = f"Wordt opgeslagen in: {get_export_path()}"
         path_hint = ft.Text(
-            f"Wordt opgeslagen in:\n{save_path}",
+            hint_text,
             size=11,
             color=ft.Colors.ON_SURFACE_VARIANT,
             text_align=ft.TextAlign.CENTER,
@@ -217,7 +300,7 @@ class ExportView:
         )
         view.drawer = build_nav_drawer(
             self._page,
-            selected_index=3,
+            selected_index=5,
             year=today.year,
             month=today.month,
         )

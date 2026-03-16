@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date
+from datetime import date, timedelta
 
 import flet as ft
 
@@ -12,7 +12,7 @@ from src.services.activity_service import ActivityService
 from src.services.day_template_service import DayTemplateService
 from src.views.nav_bar import build_nav_drawer, open_nav_drawer
 
-_NAV_INDEX: int = 2
+_NAV_INDEX: int = 3
 
 
 class DayTemplatesView:
@@ -102,10 +102,15 @@ class DayTemplatesView:
 
         def handler(e: ft.ControlEvent) -> None:
             def on_date_change(ev: ft.ControlEvent) -> None:
-                picker = self._page.overlay[-1]
                 val = picker.value  # type: ignore[union-attr]
                 if val is not None:
-                    target = val.date() if hasattr(val, "date") else val
+                    if hasattr(val, "hour"):
+                        # Shift +12h to neutralise any UTC timezone offset
+                        # (Android DatePicker may return midnight UTC = prev day local)
+                        shifted = val + timedelta(hours=12)
+                        target = date(shifted.year, shifted.month, shifted.day)
+                    else:
+                        target = val
                     self._dts.apply_to_day(template, target, self._as)
                     self._page.run_task(
                         self._page.push_route, f"/day/{target.isoformat()}"

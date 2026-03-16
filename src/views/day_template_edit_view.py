@@ -32,7 +32,7 @@ _INTENSITY_LABELS: dict[str, str] = {
     "zwaar": "Zwaar (+3 pt / 30 min)",
 }
 _NEW_ACTIVITY_KEY: str = "__nieuw__"
-_NAV_INDEX: int = 2
+_NAV_INDEX: int = 3
 
 
 class DayTemplateEditView:
@@ -173,7 +173,12 @@ class DayTemplateEditView:
 
         def handler(e: ft.ControlEvent) -> None:
             if slot_idx in self._slot_to_entry:
-                self._show_delete_dialog(self._slot_to_entry[slot_idx])
+                entry = self._slot_to_entry[slot_idx]
+                first_slot = self._time_str_to_slot(entry.start_time) or 0
+                if first_slot == slot_idx:
+                    self._show_delete_dialog(entry)
+                else:
+                    self._show_truncate_dialog(entry, slot_idx)
                 return
             if slot_idx in self._selected_slots:
                 self._selected_slots.remove(slot_idx)
@@ -213,6 +218,41 @@ class DayTemplateEditView:
             )
         )
 
+    def _show_truncate_dialog(self, entry: DayTemplateEntry, from_slot: int) -> None:
+        """Open a dialog to shorten a template entry from a given slot onward.
+
+        Args:
+            entry: The entry to shorten.
+            from_slot: The slot index at which truncation begins.
+        """
+        first_slot = self._time_str_to_slot(entry.start_time) or 0
+        new_duration = (from_slot - first_slot) * 30
+        remove_duration = entry.duration_minutes - new_duration
+
+        def do_truncate(e: ft.ControlEvent) -> None:
+            entry.duration_minutes = new_duration
+            self._dts.update(self._template)
+            self._page.pop_dialog()
+            self._refresh()
+
+        def cancel(e: ft.ControlEvent) -> None:
+            self._page.pop_dialog()
+
+        self._page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                title=ft.Text(f"Inkorten '{entry.activity_name}'?"),
+                content=ft.Text(
+                    f"Verwijder de laatste {remove_duration} min "
+                    f"(blijft {new_duration} min)."
+                ),
+                actions=[
+                    ft.TextButton("Annuleren", on_click=cancel),
+                    ft.FilledButton("Inkorten", on_click=do_truncate),
+                ],
+            )
+        )
+
     def _on_add_tap(self, e: ft.ControlEvent) -> None:
         """Open the add-activity dialog for the selected slots.
 
@@ -233,11 +273,13 @@ class DayTemplateEditView:
             ],
             border_radius=12,
         )
-        activity_dd = ft.Dropdown(
-            label="Activiteit",
-            options=[],
-            border_radius=12,
+        activity_scroll = ft.Column(
+            controls=[],
+            scroll=ft.ScrollMode.AUTO,
+            spacing=0,
+            height=160,
         )
+        activity_group = ft.RadioGroup(content=activity_scroll)
         new_name_field = ft.TextField(
             label="Naam nieuwe activiteit",
             border_radius=12,
@@ -247,32 +289,32 @@ class DayTemplateEditView:
 
         def on_category_change(ev: ft.ControlEvent) -> None:
             templates = self._ts.get_all_templates()
-            activity_dd.options = [
-                ft.dropdown.Option(key=t.name, text=t.name)
+            activity_scroll.controls = [
+                ft.Radio(value=t.name, label=t.name)
                 for t in templates
                 if t.category == category_dd.value
-            ] + [ft.dropdown.Option(key=_NEW_ACTIVITY_KEY, text="+ Nieuwe activiteit")]
-            activity_dd.value = None
+            ] + [ft.Radio(value=_NEW_ACTIVITY_KEY, label="+ Nieuwe activiteit")]
+            activity_group.value = None
             new_name_field.visible = False
             self._page.update()
 
         def on_activity_change(ev: ft.ControlEvent) -> None:
-            new_name_field.visible = activity_dd.value == _NEW_ACTIVITY_KEY
+            new_name_field.visible = activity_group.value == _NEW_ACTIVITY_KEY
             self._page.update()
 
         category_dd.on_select = on_category_change
-        activity_dd.on_select = on_activity_change
+        activity_group.on_change = on_activity_change
 
         def on_save(ev: ft.ControlEvent) -> None:
             if not category_dd.value:
                 error_text.value = "Kies een categorie."
                 self._page.update()
                 return
-            if not activity_dd.value:
+            if not activity_group.value:
                 error_text.value = "Kies een activiteit."
                 self._page.update()
                 return
-            if activity_dd.value == _NEW_ACTIVITY_KEY:
+            if activity_group.value == _NEW_ACTIVITY_KEY:
                 name = (new_name_field.value or "").strip()
                 if not name:
                     error_text.value = "Vul een naam in."
@@ -286,7 +328,7 @@ class DayTemplateEditView:
                     )
                 )
             else:
-                name = activity_dd.value  # type: ignore[assignment]
+                name = activity_group.value  # type: ignore[assignment]
             entry = DayTemplateEntry(
                 activity_name=name,
                 category=category_dd.value,  # type: ignore[arg-type]
@@ -313,7 +355,12 @@ class DayTemplateEditView:
                             color=ft.Colors.PRIMARY,
                         ),
                         category_dd,
-                        activity_dd,
+                        ft.Container(
+                            content=activity_group,
+                            border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+                            border_radius=8,
+                            padding=ft.padding.symmetric(horizontal=4),
+                        ),
                         new_name_field,
                         error_text,
                     ],
@@ -377,6 +424,7 @@ class DayTemplateEditView:
                             weight=ft.FontWeight.BOLD,
                             color=ft.Colors.ON_SURFACE_VARIANT,
                         ),
+                        ft.Text("✕", size=9, color=ft.Colors.ON_SURFACE_VARIANT),
                     ],
                     spacing=4,
                 )
