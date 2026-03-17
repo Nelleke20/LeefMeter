@@ -45,6 +45,14 @@ class TemplateService:
         """
         return self._repository.get_all()
 
+    def update_template(self, template: Template) -> None:
+        """Update an existing template (name and/or category).
+
+        Args:
+            template: Template with updated fields, matched by id.
+        """
+        self._repository.update(template)
+
     def delete_template(self, template_id: str) -> None:
         """Remove a template from storage.
 

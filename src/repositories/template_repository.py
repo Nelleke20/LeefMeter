@@ -65,6 +65,16 @@ class TemplateRepository:
         """
         return [self._from_dict(r) for r in self._load()]
 
+    def update(self, template: Template) -> None:
+        """Replace an existing template in storage.
+
+        Args:
+            template: Updated template (matched by id).
+        """
+        data = self._load()
+        data = [self._to_dict(template) if r["id"] == template.id else r for r in data]
+        self._dump(data)
+
     def delete(self, template_id: str) -> None:
         """Remove a template from storage.
 
