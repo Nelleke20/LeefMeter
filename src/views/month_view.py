@@ -217,7 +217,7 @@ class MonthView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text("Kleur drempelwaarden"),
                 content=ft.Column(
                     controls=[
@@ -400,6 +400,7 @@ class MonthView:
                     expand=True,
                     text_align=ft.TextAlign.CENTER,
                 ),
+                ft.Container(width=40),
             ],
         )
 
@@ -422,7 +423,7 @@ class MonthView:
                         scroll=ft.ScrollMode.AUTO,
                         expand=True,
                     ),
-                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
                     expand=True,
                 ),
                 ft.Container(

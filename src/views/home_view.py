@@ -47,14 +47,23 @@ class HomeView:
                     border_radius=16,
                 ),
                 ft.Text(
-                    "LeefMeter",
-                    size=32,
+                    "Welkom bij de LeefMeter",
+                    size=28,
                     weight=ft.FontWeight.BOLD,
+                    text_align=ft.TextAlign.CENTER,
                 ),
                 ft.Text(
-                    "Registreer je dagelijkse activiteiten en volg je energiepunten. "
-                    "Bouw bewustzijn op over wat je dag vult.",
-                    size=15,
+                    "Jouw persoonlijke gids voor een gebalanceerde dag.",
+                    size=16,
+                    weight=ft.FontWeight.W_500,
+                    text_align=ft.TextAlign.CENTER,
+                    color=ft.Colors.PRIMARY,
+                ),
+                ft.Divider(height=1, thickness=1),
+                ft.Text(
+                    "Registreer je activiteiten, houd je energiepunten bij "
+                    "en ontdek hoe je je dag beter kunt verdelen. ",
+                    size=14,
                     text_align=ft.TextAlign.CENTER,
                     color=ft.Colors.ON_SURFACE_VARIANT,
                 ),
@@ -66,7 +75,7 @@ class HomeView:
             ],
             alignment=ft.MainAxisAlignment.CENTER,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=24,
+            spacing=20,
             expand=True,
         )
 

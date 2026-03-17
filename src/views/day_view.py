@@ -259,7 +259,7 @@ class DayView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text(f"Verwijder '{activity.name}'?"),
                 content=ft.Text(
                     f"{activity.duration_minutes} min · {activity.start_time}"
@@ -293,7 +293,7 @@ class DayView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text(f"Verwijder laatste {remove_duration} min?"),
                 content=ft.Text(
                     f"'{activity.name}' wordt ingekort van "
@@ -328,35 +328,89 @@ class DayView:
         )
         activity_scroll = ft.Column(
             controls=[],
-            scroll=ft.ScrollMode.AUTO,
             spacing=0,
-            height=160,
+            scroll=ft.ScrollMode.AUTO,
         )
         activity_group = ft.RadioGroup(content=activity_scroll)
-        new_name_field = ft.TextField(
-            label="Naam nieuwe activiteit",
-            border_radius=12,
+        activity_list_box = ft.Container(
+            content=activity_group,
+            border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+            border_radius=8,
+            padding=ft.padding.symmetric(horizontal=4),
+            height=160,
+            visible=False,
+            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        )
+        add_new_btn = ft.TextButton(
+            "+ Activiteit toevoegen",
+            icon=ft.Icons.ADD,
             visible=False,
         )
         error_text = ft.Text(value="", color=ft.Colors.ERROR)
 
-        def on_category_change(ev: ft.ControlEvent) -> None:
+        def refresh_activity_list() -> None:
             templates = self._template_service.get_all_templates()
             activity_scroll.controls = [
                 ft.Radio(value=t.name, label=t.name)
                 for t in templates
                 if t.category == category_dd.value
-            ] + [ft.Radio(value=_NEW_ACTIVITY_KEY, label="+ Nieuwe activiteit")]
+            ]
+            activity_list_box.visible = True
+            add_new_btn.visible = True
+
+        def on_category_change(ev: ft.ControlEvent) -> None:
+            refresh_activity_list()
             activity_group.value = None
-            new_name_field.visible = False
             self._page.update()
 
         def on_activity_change(ev: ft.ControlEvent) -> None:
-            new_name_field.visible = activity_group.value == _NEW_ACTIVITY_KEY
             self._page.update()
+
+        def on_add_new_click(ev: ft.ControlEvent) -> None:
+            name_field = ft.TextField(
+                label="Naam nieuwe activiteit",
+                border_radius=12,
+                autofocus=True,
+            )
+            name_error = ft.Text(value="", color=ft.Colors.ERROR)
+
+            def on_add(ev2: ft.ControlEvent) -> None:
+                name = (name_field.value or "").strip()
+                if not name:
+                    name_error.value = "Vul een naam in."
+                    self._page.update()
+                    return
+                self._template_service.add_template(
+                    Template(
+                        name=name,
+                        category=category_dd.value,  # type: ignore[arg-type]
+                        duration_minutes=30,
+                    )
+                )
+                self._page.pop_dialog()
+                refresh_activity_list()
+                activity_group.value = name
+                self._page.update()
+
+            self._page.show_dialog(
+                ft.AlertDialog(
+                    modal=False,
+                    title=ft.Text("Nieuwe activiteit"),
+                    content=ft.Column(
+                        controls=[name_field, name_error],
+                        spacing=12,
+                        tight=True,
+                        width=280,
+                    ),
+                    actions=[
+                        ft.FilledButton("Toevoegen", on_click=on_add),
+                    ],
+                )
+            )
 
         category_dd.on_select = on_category_change
         activity_group.on_change = on_activity_change
+        add_new_btn.on_click = on_add_new_click
 
         def on_save(ev: ft.ControlEvent) -> None:
             if not category_dd.value:
@@ -367,21 +421,7 @@ class DayView:
                 error_text.value = "Kies een activiteit."
                 self._page.update()
                 return
-            if activity_group.value == _NEW_ACTIVITY_KEY:
-                name = (new_name_field.value or "").strip()
-                if not name:
-                    error_text.value = "Vul een naam in."
-                    self._page.update()
-                    return
-                self._template_service.add_template(
-                    Template(
-                        name=name,
-                        category=category_dd.value,  # type: ignore[arg-type]
-                        duration_minutes=30,
-                    )
-                )
-            else:
-                name = activity_group.value  # type: ignore[assignment]
+            name: str = activity_group.value  # type: ignore[assignment]
             # Split any occupied activities that overlap with the selected range
             affected: dict[str, Activity] = {}
             for s in range(min_slot, max_slot + 1):
@@ -428,12 +468,9 @@ class DayView:
             self._merge_adjacent_activities()
             self._refresh()
 
-        def on_cancel(ev: ft.ControlEvent) -> None:
-            self._page.pop_dialog()
-
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text("Activiteit instellen"),
                 content=ft.Column(
                     controls=[
@@ -442,13 +479,7 @@ class DayView:
                             color=ft.Colors.PRIMARY,
                         ),
                         category_dd,
-                        ft.Container(
-                            content=activity_group,
-                            border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
-                            border_radius=8,
-                            padding=ft.padding.symmetric(horizontal=4),
-                        ),
-                        new_name_field,
+                        activity_list_box,
                         error_text,
                     ],
                     spacing=12,
@@ -456,9 +487,10 @@ class DayView:
                     width=320,
                 ),
                 actions=[
-                    ft.TextButton("Annuleren", on_click=on_cancel),
+                    add_new_btn,
                     ft.FilledButton("Opslaan", on_click=on_save),
                 ],
+                actions_alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             )
         )
 
@@ -550,7 +582,7 @@ class DayView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text("Dag-instellingen"),
                 content=ft.Column(
                     controls=[start_field, end_field, error_text],
@@ -624,7 +656,7 @@ class DayView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text("Activiteiten beheren"),
                 content=ft.Column(
                     controls=sections,

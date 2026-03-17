@@ -161,7 +161,7 @@ class ManageActivitiesView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text("Activiteit toevoegen"),
                 content=ft.Column(
                     controls=[name_field, category_dd, error_text],
@@ -216,7 +216,7 @@ class ManageActivitiesView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text("Activiteit bewerken"),
                 content=ft.Column(
                     controls=[name_field, category_dd, error_text],

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pathlib
 from datetime import date
 
 import flet as ft
@@ -209,4 +210,5 @@ async def main(page: ft.Page) -> None:
 
 
 if __name__ == "__main__":
-    ft.run(main)
+    _assets = str(pathlib.Path(__file__).parent.parent / "assets")
+    ft.run(main, assets_dir=_assets)

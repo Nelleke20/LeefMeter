@@ -132,7 +132,7 @@ class ExportView:
         """Show a dialog explaining how to grant storage permission on Android."""
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text("Toegang tot Bestanden vereist"),
                 content=ft.Column(
                     controls=[
@@ -276,18 +276,22 @@ class ExportView:
                                 alignment=ft.MainAxisAlignment.CENTER,
                                 spacing=24,
                             ),
-                            ft.FilledButton(
-                                "Exporteer naar Excel",
-                                icon=ft.Icons.DOWNLOAD_OUTLINED,
-                                on_click=self._on_export,  # type: ignore[arg-type]
+                            ft.Row(
+                                controls=[
+                                    ft.FilledButton(
+                                        "Exporteer naar Excel",
+                                        icon=ft.Icons.DOWNLOAD_OUTLINED,
+                                        on_click=self._on_export,  # type: ignore[arg-type]
+                                    ),
+                                ],
+                                alignment=ft.MainAxisAlignment.CENTER,
                             ),
                             path_hint,
                             self._status_text,
                         ],
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                         spacing=16,
                     ),
-                    padding=24,
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
                     expand=True,
                 ),
             ],

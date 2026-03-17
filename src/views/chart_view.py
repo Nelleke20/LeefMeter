@@ -13,17 +13,17 @@ from src.services.activity_service import ActivityService
 from src.services.settings_service import SettingsService
 from src.views.nav_bar import build_nav_drawer, open_nav_drawer
 
-_PADDING_LEFT: float = 32.0
-_PADDING_RIGHT: float = 16.0
+_PADDING_LEFT: float = 28.0
+_PADDING_RIGHT: float = 38.0
 _PADDING_TOP: float = 24.0
-_PADDING_BOTTOM: float = 40.0
+_PADDING_BOTTOM: float = 48.0
 _DOT_RADIUS: float = 5.0
 _HOVER_RADIUS: float = 40.0
 _Y_MIN: int = -5
 _Y_MAX: int = 40
 _DAYS_BEFORE: int = 29
 _WINDOW_DAYS: int = _DAYS_BEFORE + 1
-_LABEL_FONT_SIZE: float = 10.0
+_LABEL_FONT_SIZE: float = 11.0
 _TOOLTIP_FONT_SIZE: float = 11.0
 _AXIS_COLOR: str = ft.Colors.OUTLINE_VARIANT
 _LINE_COLOR: str = ft.Colors.PRIMARY
@@ -76,6 +76,7 @@ class ChartView:
         """
         self._page = page
         self._service = service
+        self._settings_service = settings_service
         self._settings: AppSettings = settings_service.load()
         self._all_points: dict[date, int] = {}
         self._point_positions: list[tuple[float, float, date, int]] = []
@@ -321,7 +322,7 @@ class ChartView:
                 self._canvas.shapes.append(
                     cv.Text(
                         x=x_pos(i),
-                        y=_PADDING_TOP + plot_h + 6,
+                        y=_PADDING_TOP + plot_h + 14,
                         value=d.strftime("%d-%m"),
                         style=ft.TextStyle(size=_LABEL_FONT_SIZE, color=_LABEL_COLOR),
                         text_align=ft.TextAlign.CENTER,
@@ -388,6 +389,7 @@ class ChartView:
             A ft.View routed to "/chart".
         """
         today = date.today()
+        self._settings = self._settings_service.load()
         activities = self._service._repository.get_all()
         self._all_points = _group_points_by_date(activities)
 
@@ -430,7 +432,7 @@ class ChartView:
                         expand=True,
                         spacing=8,
                     ),
-                    padding=ft.padding.symmetric(horizontal=8, vertical=12),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
                     expand=True,
                 ),
             ],

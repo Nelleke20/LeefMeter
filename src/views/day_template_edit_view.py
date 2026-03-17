@@ -162,7 +162,7 @@ class DayTemplateEditView:
     # ── event handlers ────────────────────────────────────────────────────────
 
     def _on_slot_tap(self, slot_idx: int) -> Callable[[ft.ControlEvent], None]:
-        """Return a click handler for a single time slot.
+        """Return a click handler that toggles slot selection.
 
         Args:
             slot_idx: Index of the tapped slot.
@@ -172,14 +172,6 @@ class DayTemplateEditView:
         """
 
         def handler(e: ft.ControlEvent) -> None:
-            if slot_idx in self._slot_to_entry:
-                entry = self._slot_to_entry[slot_idx]
-                first_slot = self._time_str_to_slot(entry.start_time) or 0
-                if first_slot == slot_idx:
-                    self._show_delete_dialog(entry)
-                else:
-                    self._show_truncate_dialog(entry, slot_idx)
-                return
             if slot_idx in self._selected_slots:
                 self._selected_slots.remove(slot_idx)
             else:
@@ -187,6 +179,28 @@ class DayTemplateEditView:
             self._update_slot_colors()
             self._add_btn.visible = bool(self._selected_slots)
             self._page.update()
+
+        return handler
+
+    def _on_x_tap(
+        self, entry: DayTemplateEntry, slot_idx: int
+    ) -> Callable[[ft.ControlEvent], None]:
+        """Return a handler for the ✕ icon on an occupied slot.
+
+        Args:
+            entry: The template entry occupying this slot.
+            slot_idx: Index of the slot whose ✕ was tapped.
+
+        Returns:
+            Sync event handler.
+        """
+
+        def handler(e: ft.ControlEvent) -> None:
+            first_slot = self._time_str_to_slot(entry.start_time) or 0
+            if first_slot == slot_idx:
+                self._show_delete_dialog(entry)
+            else:
+                self._show_truncate_dialog(entry, slot_idx)
 
         return handler
 
@@ -208,7 +222,7 @@ class DayTemplateEditView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text(f"Verwijder '{entry.activity_name}'?"),
                 content=ft.Text(f"{entry.duration_minutes} min · {entry.start_time}"),
                 actions=[
@@ -240,7 +254,7 @@ class DayTemplateEditView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text(f"Inkorten '{entry.activity_name}'?"),
                 content=ft.Text(
                     f"Verwijder de laatste {remove_duration} min "
@@ -275,35 +289,89 @@ class DayTemplateEditView:
         )
         activity_scroll = ft.Column(
             controls=[],
-            scroll=ft.ScrollMode.AUTO,
             spacing=0,
-            height=160,
+            scroll=ft.ScrollMode.AUTO,
         )
         activity_group = ft.RadioGroup(content=activity_scroll)
-        new_name_field = ft.TextField(
-            label="Naam nieuwe activiteit",
-            border_radius=12,
+        activity_list_box = ft.Container(
+            content=activity_group,
+            border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+            border_radius=8,
+            padding=ft.padding.symmetric(horizontal=4),
+            height=160,
+            visible=False,
+            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        )
+        add_new_btn = ft.TextButton(
+            "+ Activiteit toevoegen",
+            icon=ft.Icons.ADD,
             visible=False,
         )
         error_text = ft.Text(value="", color=ft.Colors.ERROR)
 
-        def on_category_change(ev: ft.ControlEvent) -> None:
+        def refresh_activity_list() -> None:
             templates = self._ts.get_all_templates()
             activity_scroll.controls = [
                 ft.Radio(value=t.name, label=t.name)
                 for t in templates
                 if t.category == category_dd.value
-            ] + [ft.Radio(value=_NEW_ACTIVITY_KEY, label="+ Nieuwe activiteit")]
+            ]
+            activity_list_box.visible = True
+            add_new_btn.visible = True
+
+        def on_category_change(ev: ft.ControlEvent) -> None:
+            refresh_activity_list()
             activity_group.value = None
-            new_name_field.visible = False
             self._page.update()
 
         def on_activity_change(ev: ft.ControlEvent) -> None:
-            new_name_field.visible = activity_group.value == _NEW_ACTIVITY_KEY
             self._page.update()
+
+        def on_add_new_click(ev: ft.ControlEvent) -> None:
+            name_field = ft.TextField(
+                label="Naam nieuwe activiteit",
+                border_radius=12,
+                autofocus=True,
+            )
+            name_error = ft.Text(value="", color=ft.Colors.ERROR)
+
+            def on_add(ev2: ft.ControlEvent) -> None:
+                name = (name_field.value or "").strip()
+                if not name:
+                    name_error.value = "Vul een naam in."
+                    self._page.update()
+                    return
+                self._ts.add_template(
+                    Template(
+                        name=name,
+                        category=category_dd.value,  # type: ignore[arg-type]
+                        duration_minutes=30,
+                    )
+                )
+                self._page.pop_dialog()
+                refresh_activity_list()
+                activity_group.value = name
+                self._page.update()
+
+            self._page.show_dialog(
+                ft.AlertDialog(
+                    modal=False,
+                    title=ft.Text("Nieuwe activiteit"),
+                    content=ft.Column(
+                        controls=[name_field, name_error],
+                        spacing=12,
+                        tight=True,
+                        width=280,
+                    ),
+                    actions=[
+                        ft.FilledButton("Toevoegen", on_click=on_add),
+                    ],
+                )
+            )
 
         category_dd.on_select = on_category_change
         activity_group.on_change = on_activity_change
+        add_new_btn.on_click = on_add_new_click
 
         def on_save(ev: ft.ControlEvent) -> None:
             if not category_dd.value:
@@ -314,21 +382,42 @@ class DayTemplateEditView:
                 error_text.value = "Kies een activiteit."
                 self._page.update()
                 return
-            if activity_group.value == _NEW_ACTIVITY_KEY:
-                name = (new_name_field.value or "").strip()
-                if not name:
-                    error_text.value = "Vul een naam in."
-                    self._page.update()
-                    return
-                self._ts.add_template(
-                    Template(
-                        name=name,
-                        category=category_dd.value,  # type: ignore[arg-type]
-                        duration_minutes=30,
+            name: str = activity_group.value  # type: ignore[assignment]
+            # Remove or trim any existing entries that overlap the selected range
+            sorted_slots = sorted(self._selected_slots)
+            min_slot = sorted_slots[0]
+            max_slot = sorted_slots[-1]
+            affected = {
+                id(ent): ent
+                for s in range(min_slot, max_slot + 1)
+                if s in self._slot_to_entry
+                for ent in [self._slot_to_entry[s]]
+            }
+            for ent in affected.values():
+                ent_start = self._time_str_to_slot(ent.start_time) or 0
+                ent_slots = ent.duration_minutes // 30
+                self._template.entries.remove(ent)
+                before_count = max(0, min_slot - ent_start)
+                if before_count > 0:
+                    self._template.entries.append(
+                        DayTemplateEntry(
+                            activity_name=ent.activity_name,
+                            category=ent.category,
+                            start_time=self._slot_to_time_str(ent_start),
+                            duration_minutes=before_count * 30,
+                        )
                     )
-                )
-            else:
-                name = activity_group.value  # type: ignore[assignment]
+                after_start = max_slot + 1
+                after_count = max(0, (ent_start + ent_slots) - after_start)
+                if after_count > 0:
+                    self._template.entries.append(
+                        DayTemplateEntry(
+                            activity_name=ent.activity_name,
+                            category=ent.category,
+                            start_time=self._slot_to_time_str(after_start),
+                            duration_minutes=after_count * 30,
+                        )
+                    )
             entry = DayTemplateEntry(
                 activity_name=name,
                 category=category_dd.value,  # type: ignore[arg-type]
@@ -341,12 +430,9 @@ class DayTemplateEditView:
             self._page.pop_dialog()
             self._refresh()
 
-        def on_cancel(ev: ft.ControlEvent) -> None:
-            self._page.pop_dialog()
-
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text("Activiteit toevoegen"),
                 content=ft.Column(
                     controls=[
@@ -355,13 +441,7 @@ class DayTemplateEditView:
                             color=ft.Colors.PRIMARY,
                         ),
                         category_dd,
-                        ft.Container(
-                            content=activity_group,
-                            border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
-                            border_radius=8,
-                            padding=ft.padding.symmetric(horizontal=4),
-                        ),
-                        new_name_field,
+                        activity_list_box,
                         error_text,
                     ],
                     spacing=12,
@@ -369,9 +449,10 @@ class DayTemplateEditView:
                     width=320,
                 ),
                 actions=[
-                    ft.TextButton("Annuleren", on_click=on_cancel),
+                    add_new_btn,
                     ft.FilledButton("Opslaan", on_click=on_save),
                 ],
+                actions_alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             )
         )
 
@@ -396,37 +477,55 @@ class DayTemplateEditView:
             if start == slot_idx:
                 content = ft.Row(
                     controls=[
-                        ft.Text(
-                            entry.activity_name,
-                            size=10,
-                            color=ft.Colors.ON_SURFACE,
-                            no_wrap=True,
-                            overflow=ft.TextOverflow.ELLIPSIS,
+                        ft.Container(
+                            content=ft.Row(
+                                controls=[
+                                    ft.Text(
+                                        entry.activity_name,
+                                        size=10,
+                                        color=ft.Colors.ON_SURFACE,
+                                        no_wrap=True,
+                                        overflow=ft.TextOverflow.ELLIPSIS,
+                                        expand=True,
+                                    ),
+                                    ft.Text(
+                                        f"{pts:+d}pt",
+                                        size=10,
+                                        weight=ft.FontWeight.BOLD,
+                                        color=ft.Colors.ON_SURFACE_VARIANT,
+                                    ),
+                                ],
+                                spacing=4,
+                            ),
                             expand=True,
+                            on_click=self._on_slot_tap(slot_idx),
                         ),
-                        ft.Text(
-                            f"{pts:+d}pt",
-                            size=10,
-                            weight=ft.FontWeight.BOLD,
-                            color=ft.Colors.ON_SURFACE_VARIANT,
+                        ft.Container(
+                            content=ft.Text(
+                                "✕", size=9, color=ft.Colors.ON_SURFACE_VARIANT
+                            ),
+                            on_click=self._on_x_tap(entry, slot_idx),
+                            padding=ft.padding.only(left=4, right=2),
                         ),
-                        ft.Text("✕", size=9, color=ft.Colors.ON_SURFACE_VARIANT),
                     ],
-                    spacing=4,
+                    spacing=0,
                 )
             else:
                 content = ft.Row(
                     controls=[
-                        ft.Container(expand=True),
-                        ft.Text(
-                            f"{pts:+d}pt",
-                            size=10,
-                            weight=ft.FontWeight.BOLD,
-                            color=ft.Colors.ON_SURFACE_VARIANT,
+                        ft.Container(
+                            expand=True,
+                            on_click=self._on_slot_tap(slot_idx),
                         ),
-                        ft.Text("✕", size=9, color=ft.Colors.ON_SURFACE_VARIANT),
+                        ft.Container(
+                            content=ft.Text(
+                                "✕", size=9, color=ft.Colors.ON_SURFACE_VARIANT
+                            ),
+                            on_click=self._on_x_tap(entry, slot_idx),
+                            padding=ft.padding.only(left=4, right=2),
+                        ),
                     ],
-                    spacing=4,
+                    spacing=0,
                 )
 
         container = ft.Container(
@@ -434,7 +533,7 @@ class DayTemplateEditView:
             border_radius=4,
             height=28,
             expand=True,
-            on_click=self._on_slot_tap(slot_idx),
+            on_click=self._on_slot_tap(slot_idx) if entry is None else None,
             content=content,
             padding=ft.padding.symmetric(horizontal=6) if content else None,
         )

@@ -87,6 +87,7 @@ class FeedbackView:
                                         expand=True,
                                     ),
                                 ],
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
                             ),
                             ft.Text(
                                 "Typ je bericht en tik op 'Verstuur'.",
@@ -104,7 +105,7 @@ class FeedbackView:
                         spacing=16,
                         expand=True,
                     ),
-                    padding=24,
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
                     expand=True,
                 ),
             ],

@@ -168,7 +168,7 @@ class DayTemplatesView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text("Nieuw dag template"),
                 content=ft.Column(
                     controls=[name_field, error_text],
@@ -255,7 +255,7 @@ class DayTemplatesView:
                             ),
                         ],
                     ),
-                    padding=ft.padding.symmetric(horizontal=8, vertical=12),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
                 ),
                 ft.Column(
                     controls=[
