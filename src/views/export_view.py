@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from datetime import date
-from pathlib import Path
 
 import flet as ft
 
-from src.services.export_service import ExportService
-from src.views.nav_bar import build_nav_rail
+from src.services.export_service import ExportService, get_export_path
+from src.views.nav_bar import build_nav_drawer, open_nav_drawer
 
-_EXPORT_PATH: Path = Path.home() / "Downloads" / "leefmeter_export.xlsx"
 _NO_DATE: str = "Geen datum"
 
 
@@ -18,7 +18,9 @@ class ExportView:
     """Lets the user export all activity data to an Excel file.
 
     Date range can be selected via a calendar date picker.
-    The Excel file is saved to ~/Downloads.
+    On Android the file is saved to the app's external files directory,
+    visible in the Files app under Android > data > com.flet.leefmeter > files.
+    On desktop it is saved to ~/Downloads.
     """
 
     def __init__(self, page: ft.Page, export_service: ExportService) -> None:
@@ -93,24 +95,101 @@ class ExportView:
         self._to_picker.open = True
         self._page.update()
 
+    def _open_android_settings(self, e: ft.ControlEvent) -> None:
+        """Open Android app-permissions settings so the user can grant storage.
+
+        Only effective on Android. Launches the system settings page for
+        managing all-files access for this app.
+
+        Args:
+            e: Click event from the settings button.
+        """
+        try:
+            subprocess.Popen(
+                [
+                    "am",
+                    "start",
+                    "-a",
+                    "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION",
+                    "-d",
+                    "package:com.flet.leefmeter",
+                ]
+            )
+        except Exception:
+            subprocess.Popen(  # type: ignore[call-overload]
+                [
+                    "am",
+                    "start",
+                    "-a",
+                    "android.settings.APPLICATION_DETAILS_SETTINGS",
+                    "-d",
+                    "package:com.flet.leefmeter",
+                ]
+            )
+        self._page.pop_dialog()
+
+    def _show_permission_dialog(self) -> None:
+        """Show a dialog explaining how to grant storage permission on Android."""
+        self._page.show_dialog(
+            ft.AlertDialog(
+                modal=False,
+                title=ft.Text("Toegang tot Bestanden vereist"),
+                content=ft.Column(
+                    controls=[
+                        ft.Text(
+                            "Om op te slaan in Documenten heeft de app "
+                            "'Toegang tot alle bestanden' nodig.\n\n"
+                            "Tik op 'Open instellingen', zoek 'Toegang tot "
+                            "alle bestanden' en zet deze aan voor LeefMeter.",
+                            size=13,
+                        ),
+                    ],
+                    tight=True,
+                    width=280,
+                ),
+                actions=[
+                    ft.TextButton(
+                        "Annuleren",
+                        on_click=lambda _: self._page.pop_dialog(),
+                    ),
+                    ft.FilledButton(
+                        "Open instellingen",
+                        icon=ft.Icons.SETTINGS,
+                        on_click=self._open_android_settings,  # type: ignore[arg-type]
+                    ),
+                ],
+            )
+        )
+
     def _on_export(self, e: ft.ControlEvent) -> None:
-        """Create the Excel file and update the status message.
+        """Generate the Excel file and show the save path.
+
+        On Android, if saving to Documents fails due to missing permissions,
+        shows a dialog guiding the user to grant storage access.
 
         Args:
             e: Click event from the export button.
         """
         try:
             path = self._export_service.export(
-                output_path=_EXPORT_PATH,
                 from_date=self._from_date,
                 to_date=self._to_date,
             )
             self._status_text.color = ft.Colors.PRIMARY
             self._status_text.value = f"Opgeslagen: {path}"
+            self._page.update()
+        except PermissionError:
+            self._page.update()
+            if os.environ.get("FLET_APP_STORAGE_DATA"):
+                self._show_permission_dialog()
+            else:
+                self._status_text.color = ft.Colors.ERROR
+                self._status_text.value = "Geen toegang tot de opslagmap."
+                self._page.update()
         except Exception as exc:
             self._status_text.color = ft.Colors.ERROR
             self._status_text.value = f"Fout: {exc}"
-        self._page.update()
+            self._page.update()
 
     def build(self) -> ft.View:
         """Compose and return the full Flet View for the export screen.
@@ -124,15 +203,36 @@ class ExportView:
         if self._to_picker not in self._page.overlay:
             self._page.overlay.append(self._to_picker)
 
+        if os.environ.get("FLET_APP_STORAGE_DATA"):
+            hint_text = "Wordt opgeslagen in: Interne opslag > Documenten"
+        else:
+            hint_text = f"Wordt opgeslagen in: {get_export_path()}"
+        path_hint = ft.Text(
+            hint_text,
+            size=11,
+            color=ft.Colors.ON_SURFACE_VARIANT,
+            text_align=ft.TextAlign.CENTER,
+        )
+
         content_column = ft.Column(
             controls=[
                 ft.Container(
                     content=ft.Column(
                         controls=[
-                            ft.Text(
-                                "Exporteren",
-                                size=20,
-                                weight=ft.FontWeight.BOLD,
+                            ft.Row(
+                                controls=[
+                                    ft.IconButton(
+                                        icon=ft.Icons.MENU,
+                                        on_click=lambda _: open_nav_drawer(self._page),
+                                        icon_size=20,
+                                    ),
+                                    ft.Text(
+                                        "Exporteren",
+                                        size=20,
+                                        weight=ft.FontWeight.BOLD,
+                                        expand=True,
+                                    ),
+                                ],
                             ),
                             ft.Row(
                                 controls=[
@@ -149,7 +249,9 @@ class ExportView:
                                             ),
                                             self._from_label,
                                         ],
-                                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                        horizontal_alignment=(
+                                            ft.CrossAxisAlignment.CENTER
+                                        ),
                                         spacing=4,
                                     ),
                                     ft.Column(
@@ -165,50 +267,45 @@ class ExportView:
                                             ),
                                             self._to_label,
                                         ],
-                                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                        horizontal_alignment=(
+                                            ft.CrossAxisAlignment.CENTER
+                                        ),
                                         spacing=4,
                                     ),
                                 ],
                                 alignment=ft.MainAxisAlignment.CENTER,
                                 spacing=24,
                             ),
-                            ft.FilledButton(
-                                "Exporteer naar Excel",
-                                icon=ft.Icons.DOWNLOAD_OUTLINED,
-                                on_click=self._on_export,
+                            ft.Row(
+                                controls=[
+                                    ft.FilledButton(
+                                        "Exporteer naar Excel",
+                                        icon=ft.Icons.DOWNLOAD_OUTLINED,
+                                        on_click=self._on_export,  # type: ignore[arg-type]
+                                    ),
+                                ],
+                                alignment=ft.MainAxisAlignment.CENTER,
                             ),
+                            path_hint,
                             self._status_text,
                         ],
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                         spacing=16,
                     ),
-                    padding=24,
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
                     expand=True,
                 ),
             ],
             expand=True,
         )
-        return ft.View(
+        view = ft.View(
             route="/export",
             padding=0,
-            controls=[
-                ft.Row(
-                    controls=[
-                        build_nav_rail(
-                            self._page,
-                            selected_index=3,
-                            year=today.year,
-                            month=today.month,
-                        ),
-                        ft.VerticalDivider(
-                            width=1,
-                            thickness=1,
-                            color=ft.Colors.OUTLINE_VARIANT,
-                        ),
-                        content_column,
-                    ],
-                    expand=True,
-                    spacing=0,
-                )
-            ],
+            controls=[content_column],
         )
+        view.drawer = build_nav_drawer(
+            self._page,
+            selected_index=5,
+            year=today.year,
+            month=today.month,
+        )
+        return view

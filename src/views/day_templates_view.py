@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date
+from datetime import date, timedelta
 
 import flet as ft
 
 from src.models.day_template import DayTemplate
 from src.services.activity_service import ActivityService
 from src.services.day_template_service import DayTemplateService
-from src.views.nav_bar import build_nav_rail
+from src.views.nav_bar import build_nav_drawer, open_nav_drawer
 
-_NAV_INDEX: int = 2
+_NAV_INDEX: int = 3
 
 
 class DayTemplatesView:
@@ -102,10 +102,15 @@ class DayTemplatesView:
 
         def handler(e: ft.ControlEvent) -> None:
             def on_date_change(ev: ft.ControlEvent) -> None:
-                picker = self._page.overlay[-1]
                 val = picker.value  # type: ignore[union-attr]
                 if val is not None:
-                    target = val.date() if hasattr(val, "date") else val
+                    if hasattr(val, "hour"):
+                        # Shift +12h to neutralise any UTC timezone offset
+                        # (Android DatePicker may return midnight UTC = prev day local)
+                        shifted = val + timedelta(hours=12)
+                        target = date(shifted.year, shifted.month, shifted.day)
+                    else:
+                        target = val
                     self._dts.apply_to_day(template, target, self._as)
                     self._page.run_task(
                         self._page.push_route, f"/day/{target.isoformat()}"
@@ -115,7 +120,10 @@ class DayTemplatesView:
                 value=date.today(),
                 on_change=on_date_change,
                 on_dismiss=lambda _: None,
-                help_text=f"Pas toe: {template.name} ({len(template.entries)} activiteiten)",
+                help_text=(
+                    f"Pas toe: {template.name}"
+                    f" ({len(template.entries)} activiteiten)"
+                ),
                 confirm_text="Toepassen",
                 cancel_text="Annuleren",
             )
@@ -160,7 +168,7 @@ class DayTemplatesView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text("Nieuw dag template"),
                 content=ft.Column(
                     controls=[name_field, error_text],
@@ -232,12 +240,22 @@ class DayTemplatesView:
         content_column = ft.Column(
             controls=[
                 ft.Container(
-                    content=ft.Text(
-                        "Dag Templates",
-                        size=20,
-                        weight=ft.FontWeight.BOLD,
+                    content=ft.Row(
+                        controls=[
+                            ft.IconButton(
+                                icon=ft.Icons.MENU,
+                                on_click=lambda _: open_nav_drawer(self._page),
+                                icon_size=20,
+                            ),
+                            ft.Text(
+                                "Dag Templates",
+                                size=20,
+                                weight=ft.FontWeight.BOLD,
+                                expand=True,
+                            ),
+                        ],
                     ),
-                    padding=ft.padding.symmetric(horizontal=16, vertical=12),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
                 ),
                 ft.Column(
                     controls=[
@@ -256,27 +274,15 @@ class DayTemplatesView:
             ],
             expand=True,
         )
-        return ft.View(
+        view = ft.View(
             route="/day-templates",
             padding=0,
-            controls=[
-                ft.Row(
-                    controls=[
-                        build_nav_rail(
-                            self._page,
-                            selected_index=_NAV_INDEX,
-                            year=today.year,
-                            month=today.month,
-                        ),
-                        ft.VerticalDivider(
-                            width=1,
-                            thickness=1,
-                            color=ft.Colors.OUTLINE_VARIANT,
-                        ),
-                        content_column,
-                    ],
-                    expand=True,
-                    spacing=0,
-                )
-            ],
+            controls=[content_column],
         )
+        view.drawer = build_nav_drawer(
+            self._page,
+            selected_index=_NAV_INDEX,
+            year=today.year,
+            month=today.month,
+        )
+        return view

@@ -1,32 +1,45 @@
-"""Chart view — line chart of total points per day."""
+"""Chart view — 30-day bar chart of total points per day."""
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import flet as ft
 import flet.canvas as cv
 
+from src.models.activity import Activity
+from src.models.settings import AppSettings
 from src.services.activity_service import ActivityService
-from src.views.nav_bar import build_nav_rail
+from src.services.settings_service import SettingsService
+from src.views.nav_bar import build_nav_drawer, open_nav_drawer
 
-_PADDING_LEFT: float = 52.0
-_PADDING_RIGHT: float = 16.0
-_PADDING_TOP: float = 32.0
-_PADDING_BOTTOM: float = 40.0
+_PADDING_LEFT: float = 28.0
+_PADDING_RIGHT: float = 38.0
+_PADDING_TOP: float = 24.0
+_PADDING_BOTTOM: float = 48.0
 _DOT_RADIUS: float = 5.0
-_HOVER_RADIUS: float = 20.0
-_LABEL_FONT_SIZE: float = 10.0
+_HOVER_RADIUS: float = 40.0
+_Y_MIN: int = -5
+_Y_MAX: int = 40
+_DAYS_BEFORE: int = 29
+_WINDOW_DAYS: int = _DAYS_BEFORE + 1
+_LABEL_FONT_SIZE: float = 11.0
 _TOOLTIP_FONT_SIZE: float = 11.0
 _AXIS_COLOR: str = ft.Colors.OUTLINE_VARIANT
 _LINE_COLOR: str = ft.Colors.PRIMARY
-_DOT_COLOR: str = ft.Colors.PRIMARY
 _LABEL_COLOR: str = ft.Colors.ON_SURFACE_VARIANT
 _TOOLTIP_BG: str = ft.Colors.SURFACE_CONTAINER_HIGH
 _TOOLTIP_TEXT: str = ft.Colors.ON_SURFACE
+_TODAY_COLOR: str = ft.Colors.TERTIARY
+
+# Threshold band colours — very subtle, nearly transparent
+_COLOR_BLUE: str = ft.Colors.with_opacity(0.08, ft.Colors.BLUE)
+_COLOR_GREEN: str = ft.Colors.with_opacity(0.10, ft.Colors.GREEN)
+_COLOR_ORANGE: str = ft.Colors.with_opacity(0.10, ft.Colors.ORANGE)
+_COLOR_RED: str = ft.Colors.with_opacity(0.10, ft.Colors.RED)
 
 
-def _group_points_by_date(activities: list) -> dict[date, int]:
+def _group_points_by_date(activities: list[Activity]) -> dict[date, int]:
     """Aggregate total points per calendar date.
 
     Args:
@@ -42,23 +55,30 @@ def _group_points_by_date(activities: list) -> dict[date, int]:
 
 
 class ChartView:
-    """Renders a line chart showing total points per day.
+    """Renders a 30-day bar+line chart (today and 29 preceding days).
 
-    Uses the flet.canvas module to draw axes, a polyline, and labelled dots.
-    Mouse hover draws a tooltip near the nearest data point.
-    Y-axis always starts at 0. Handles empty data gracefully.
+    Background bands reflect the same colour thresholds as the month view.
+    Each data point is coloured by threshold. A tooltip appears on tap/hover.
     """
 
-    def __init__(self, page: ft.Page, service: ActivityService) -> None:
-        """Initialise with page and activity service.
+    def __init__(
+        self,
+        page: ft.Page,
+        service: ActivityService,
+        settings_service: SettingsService,
+    ) -> None:
+        """Initialise with page, activity service, and settings service.
 
         Args:
             page: The active Flet page.
             service: Service providing access to all activities.
+            settings_service: Service for loading colour thresholds.
         """
         self._page = page
         self._service = service
-        self._points_by_date: dict[date, int] = {}
+        self._settings_service = settings_service
+        self._settings: AppSettings = settings_service.load()
+        self._all_points: dict[date, int] = {}
         self._point_positions: list[tuple[float, float, date, int]] = []
         self._last_width: float = 0.0
         self._last_height: float = 0.0
@@ -68,11 +88,38 @@ class ChartView:
             expand=True,
         )
 
-    def _on_resize(self, e: cv.CanvasResizeEvent) -> None:
-        """Redraw the chart whenever the canvas is resized.
+    def _window_dates(self) -> list[date]:
+        """Return the 30-day window ending today.
+
+        Returns:
+            List of dates from today-29 to today inclusive.
+        """
+        today = date.today()
+        return [today - timedelta(days=_DAYS_BEFORE - i) for i in range(_WINDOW_DAYS)]
+
+    def _dot_color(self, v: int) -> str:
+        """Return a colour for a data point based on threshold settings.
 
         Args:
-            e: Resize event containing the new canvas dimensions.
+            v: The point value for the day.
+
+        Returns:
+            A Flet colour string.
+        """
+        s = self._settings
+        if v >= s.red_threshold:
+            return _COLOR_RED
+        if v >= s.orange_threshold:
+            return _COLOR_ORANGE
+        if v >= s.green_threshold:
+            return _COLOR_GREEN
+        return _COLOR_BLUE
+
+    def _on_resize(self, e: cv.CanvasResizeEvent) -> None:
+        """Redraw on canvas resize.
+
+        Args:
+            e: Resize event with new dimensions.
         """
         self._last_width = e.width
         self._last_height = e.height
@@ -80,22 +127,17 @@ class ChartView:
         self._redraw()
         self._page.update()
 
-    def _on_hover(self, e: ft.ControlEvent) -> None:
-        """Find the nearest data point and draw a tooltip there.
+    def _handle_pointer(self, x: float, y: float) -> None:
+        """Show tooltip for the nearest data point within hover radius.
 
         Args:
-            e: Hover event with pointer coordinates.
+            x: Pointer x in canvas-local pixels.
+            y: Pointer y in canvas-local pixels.
         """
-        ex: float = (
-            e.local_x if hasattr(e, "local_x") else getattr(e, "x", 0.0)
-        )
-        ey: float = (
-            e.local_y if hasattr(e, "local_y") else getattr(e, "y", 0.0)
-        )
         nearest: tuple[float, float, date, int] | None = None
         min_dist = _HOVER_RADIUS
         for px, py, d, v in self._point_positions:
-            dist = ((ex - px) ** 2 + (ey - py) ** 2) ** 0.5
+            dist = ((x - px) ** 2 + (y - py) ** 2) ** 0.5
             if dist < min_dist:
                 min_dist = dist
                 nearest = (px, py, d, v)
@@ -104,65 +146,105 @@ class ChartView:
             self._redraw()
             self._page.update()
 
+    def _on_hover(self, e: ft.ControlEvent) -> None:
+        """Handle mouse hover.
+
+        Args:
+            e: Hover event with pointer coordinates.
+        """
+        ex: float = e.local_x if hasattr(e, "local_x") else getattr(e, "x", 0.0)
+        ey: float = e.local_y if hasattr(e, "local_y") else getattr(e, "y", 0.0)
+        self._handle_pointer(ex, ey)
+
+    def _on_tap_down(self, e: ft.TapEvent) -> None:  # type: ignore[type-arg]
+        """Handle tap on mobile.
+
+        Args:
+            e: Tap event with coordinates.
+        """
+        x: float = getattr(e, "local_x", None) or getattr(e, "x", 0.0)
+        y: float = getattr(e, "local_y", None) or getattr(e, "y", 0.0)
+        self._handle_pointer(x, y)
+
+    def _on_tap(self, e: ft.ControlEvent) -> None:
+        """Clear tooltip on second tap.
+
+        Args:
+            e: Tap event.
+        """
+        if self._active_hover is not None:
+            self._active_hover = None
+            self._redraw()
+            self._page.update()
+
+    def _on_long_press_start(self, e: ft.ControlEvent) -> None:
+        """Show tooltip on long press.
+
+        Args:
+            e: Long-press event with coordinates.
+        """
+        x: float = getattr(e, "local_x", 0.0)
+        y: float = getattr(e, "local_y", 0.0)
+        self._handle_pointer(x, y)
+
     def _redraw(self) -> None:
-        """Rebuild canvas shapes for the base chart plus any active tooltip."""
+        """Rebuild all canvas shapes."""
         self._draw_base(self._last_width, self._last_height)
         if self._active_hover is not None:
             self._draw_tooltip(*self._active_hover)
 
     def _draw_base(self, width: float, height: float) -> None:
-        """Build all base canvas shapes for the line chart.
+        """Draw background bands, axes, grid, bars, and line.
 
         Args:
-            width: Current canvas width in logical pixels.
-            height: Current canvas height in logical pixels.
+            width: Canvas width in logical pixels.
+            height: Canvas height in logical pixels.
         """
         self._canvas.shapes = []
         self._point_positions = []
 
-        if not self._points_by_date:
-            return
-
-        dates = list(self._points_by_date.keys())
-        values = list(self._points_by_date.values())
+        today = date.today()
+        dates = self._window_dates()
         n = len(dates)
+        s = self._settings
 
         plot_w = max(1.0, width - _PADDING_LEFT - _PADDING_RIGHT)
         plot_h = max(1.0, height - _PADDING_TOP - _PADDING_BOTTOM)
-
-        # Y-axis always starts at 0
-        min_val = 0
-        max_val = max(max(values), 1)
+        y_range = _Y_MAX - _Y_MIN
 
         def x_pos(i: int) -> float:
-            if n == 1:
-                return _PADDING_LEFT + plot_w / 2
             return _PADDING_LEFT + (i / (n - 1)) * plot_w
 
-        def y_pos(v: int) -> float:
-            return _PADDING_TOP + plot_h - (v / max_val) * plot_h
+        def y_pos(v: float) -> float:
+            frac = (v - _Y_MIN) / y_range
+            return _PADDING_TOP + plot_h - frac * plot_h
 
-        # "Punten" label — horizontal, above the y-axis
-        self._canvas.shapes.append(
-            cv.Text(
-                x=_PADDING_LEFT - 4,
-                y=_PADDING_TOP - 18,
-                value="Punten",
-                style=ft.TextStyle(size=_LABEL_FONT_SIZE, color=_LABEL_COLOR),
-                text_align=ft.TextAlign.RIGHT,
-            )
-        )
+        # ── Background colour bands (matching month-view thresholds) ──────────
+        bands = [
+            (_Y_MIN, 0, _COLOR_BLUE),
+            (0, s.green_threshold, _COLOR_BLUE),
+            (s.green_threshold, s.orange_threshold, _COLOR_GREEN),
+            (s.orange_threshold, s.red_threshold, _COLOR_ORANGE),
+            (s.red_threshold, _Y_MAX, _COLOR_RED),
+        ]
+        for band_lo, band_hi in [
+            (b[0], b[1]) for b in bands
+        ]:
+            band_color = next(c for lo, hi, c in bands if lo == band_lo and hi == band_hi)
+            by_top = y_pos(min(band_hi, _Y_MAX))
+            by_bot = y_pos(max(band_lo, _Y_MIN))
+            if by_bot > by_top:
+                self._canvas.shapes.append(
+                    cv.Rect(
+                        x=_PADDING_LEFT,
+                        y=by_top,
+                        width=plot_w,
+                        height=by_bot - by_top,
+                        paint=ft.Paint(color=band_color, style=ft.PaintingStyle.FILL),
+                    )
+                )
 
-        # Axes
-        self._canvas.shapes.append(
-            cv.Line(
-                x1=_PADDING_LEFT,
-                y1=_PADDING_TOP + plot_h,
-                x2=_PADDING_LEFT + plot_w,
-                y2=_PADDING_TOP + plot_h,
-                paint=ft.Paint(color=_AXIS_COLOR, stroke_width=1),
-            )
-        )
+        # ── Y-axis ────────────────────────────────────────────────────────────
         self._canvas.shapes.append(
             cv.Line(
                 x1=_PADDING_LEFT,
@@ -173,85 +255,121 @@ class ChartView:
             )
         )
 
-        # Connecting lines
-        for i in range(n - 1):
+        # ── Grid lines + labels ───────────────────────────────────────────────
+        for tick in (_Y_MIN, 0, s.green_threshold, s.orange_threshold, s.red_threshold, _Y_MAX):
+            gy = y_pos(tick)
+            sw = 1.2 if tick == 0 else 0.5
             self._canvas.shapes.append(
                 cv.Line(
-                    x1=x_pos(i),
-                    y1=y_pos(values[i]),
-                    x2=x_pos(i + 1),
-                    y2=y_pos(values[i + 1]),
-                    paint=ft.Paint(color=_LINE_COLOR, stroke_width=2),
+                    x1=_PADDING_LEFT,
+                    y1=gy,
+                    x2=_PADDING_LEFT + plot_w,
+                    y2=gy,
+                    paint=ft.Paint(color=_AXIS_COLOR, stroke_width=sw),
                 )
             )
-
-        # Dots, x-labels, and hover positions
-        label_step = max(1, n // 8)
-        for i, (d, v) in enumerate(zip(dates, values)):
-            cx = x_pos(i)
-            cy = y_pos(v)
-            self._point_positions.append((cx, cy, d, v))
-            self._canvas.shapes.append(
-                cv.Circle(
-                    x=cx,
-                    y=cy,
-                    radius=_DOT_RADIUS,
-                    paint=ft.Paint(color=_DOT_COLOR),
-                )
-            )
-            if i % label_step == 0 or i == n - 1:
-                self._canvas.shapes.append(
-                    cv.Text(
-                        x=cx,
-                        y=_PADDING_TOP + plot_h + 6,
-                        value=d.strftime("%d-%m"),
-                        style=ft.TextStyle(
-                            size=_LABEL_FONT_SIZE, color=_LABEL_COLOR
-                        ),
-                        text_align=ft.TextAlign.CENTER,
-                    )
-                )
-
-        # Y-axis labels: 0 at bottom, max at top
-        for val, yp in [(min_val, y_pos(min_val)), (max_val, y_pos(max_val))]:
             self._canvas.shapes.append(
                 cv.Text(
                     x=_PADDING_LEFT - 6,
-                    y=yp,
-                    value=str(val),
+                    y=gy,
+                    value=str(tick),
                     style=ft.TextStyle(size=_LABEL_FONT_SIZE, color=_LABEL_COLOR),
                     text_align=ft.TextAlign.RIGHT,
                 )
             )
 
-    def _draw_tooltip(
-        self, px: float, py: float, d: date, v: int
-    ) -> None:
-        """Draw a tooltip bubble near a hovered data point.
+        data_points = [
+            (i, d, self._all_points[d])
+            for i, d in enumerate(dates)
+            if d in self._all_points
+        ]
+
+        # ── Data points (position tracking for tooltip) ───────────────────────
+        for i, d, v in data_points:
+            self._point_positions.append((x_pos(i), y_pos(v), d, v))
+
+        # ── Line connecting data points ───────────────────────────────────────
+        for k in range(len(data_points) - 1):
+            i0, d0, v0 = data_points[k]
+            i1, d1, v1 = data_points[k + 1]
+            if (d1 - d0).days == 1:
+                self._canvas.shapes.append(
+                    cv.Line(
+                        x1=x_pos(i0),
+                        y1=y_pos(v0),
+                        x2=x_pos(i1),
+                        y2=y_pos(v1),
+                        paint=ft.Paint(color=_LINE_COLOR, stroke_width=2.0),
+                    )
+                )
+
+        # ── Dots at each data point ───────────────────────────────────────────
+        for i, d, v in data_points:
+            color = ft.Colors.RED if d == today else ft.Colors.BLACK
+            self._canvas.shapes.append(
+                cv.Circle(
+                    x=x_pos(i),
+                    y=y_pos(v),
+                    radius=3.0,
+                    paint=ft.Paint(color=color, style=ft.PaintingStyle.FILL),
+                )
+            )
+
+        # ── X-axis date labels ────────────────────────────────────────────────
+        label_step = max(1, n // 6)
+        for i, d in enumerate(dates):
+            if i % label_step == 0 or i == n - 1:
+                self._canvas.shapes.append(
+                    cv.Text(
+                        x=x_pos(i),
+                        y=_PADDING_TOP + plot_h + 14,
+                        value=d.strftime("%d-%m"),
+                        style=ft.TextStyle(size=_LABEL_FONT_SIZE, color=_LABEL_COLOR),
+                        text_align=ft.TextAlign.CENTER,
+                    )
+                )
+
+        # ── Hover vertical line ───────────────────────────────────────────────
+        if self._active_hover is not None:
+            hx = self._active_hover[0]
+            self._canvas.shapes.append(
+                cv.Line(
+                    x1=hx,
+                    y1=_PADDING_TOP,
+                    x2=hx,
+                    y2=_PADDING_TOP + plot_h,
+                    paint=ft.Paint(
+                        color=ft.Colors.ON_SURFACE_VARIANT, stroke_width=1
+                    ),
+                )
+            )
+
+    def _draw_tooltip(self, px: float, py: float, d: date, v: int) -> None:
+        """Draw a tooltip near a hovered or tapped data point.
 
         Args:
             px: X position of the data point.
             py: Y position of the data point.
             d: Date of the data point.
-            v: Point value of the data point.
+            v: Point value.
         """
         label = f"{d.strftime('%d-%m-%Y')}  {v:+d} pt"
         pad = 6.0
-        box_w = 130.0
-        box_h = 22.0
-        # Position above-right; flip left if near right edge
+        box_w = 138.0
+        box_h = 24.0
         tx = px + 10
         if self._last_width > 0 and tx + box_w > self._last_width - _PADDING_RIGHT:
             tx = px - box_w - 10
-        ty = py - box_h - 6
-
+        ty = py - box_h - 8
+        if ty < _PADDING_TOP:
+            ty = py + 8
         self._canvas.shapes.append(
             cv.Rect(
                 x=tx,
                 y=ty,
                 width=box_w,
                 height=box_h,
-                border_radius=4,
+                border_radius=6,
                 paint=ft.Paint(color=_TOOLTIP_BG),
             )
         )
@@ -271,36 +389,40 @@ class ChartView:
             A ft.View routed to "/chart".
         """
         today = date.today()
+        self._settings = self._settings_service.load()
         activities = self._service._repository.get_all()
-        self._points_by_date = _group_points_by_date(activities)
+        self._all_points = _group_points_by_date(activities)
 
-        if self._points_by_date:
-            chart_area: ft.Control = ft.GestureDetector(
-                mouse_cursor=ft.MouseCursor.BASIC,
-                on_hover=self._on_hover,
-                content=self._canvas,
-                expand=True,
-            )
-        else:
-            chart_area = ft.Container(
-                content=ft.Text(
-                    "Nog geen activiteiten geregistreerd.",
-                    color=ft.Colors.OUTLINE,
-                    text_align=ft.TextAlign.CENTER,
-                ),
-                alignment=ft.Alignment(0, 0),
-                expand=True,
-            )
+        chart_area: ft.Control = ft.GestureDetector(
+            mouse_cursor=ft.MouseCursor.BASIC,
+            on_hover=self._on_hover,  # type: ignore[arg-type]
+            on_tap_down=self._on_tap_down,
+            on_tap=self._on_tap,
+            on_long_press_start=self._on_long_press_start,  # type: ignore[arg-type]
+            content=self._canvas,
+            expand=True,
+        )
 
         content_column = ft.Column(
             controls=[
                 ft.Container(
                     content=ft.Column(
                         controls=[
-                            ft.Text(
-                                "Aantal punten per dag",
-                                size=20,
-                                weight=ft.FontWeight.BOLD,
+                            ft.Row(
+                                controls=[
+                                    ft.IconButton(
+                                        icon=ft.Icons.MENU,
+                                        on_click=lambda _: open_nav_drawer(self._page),
+                                        icon_size=20,
+                                    ),
+                                    ft.Text(
+                                        "Punten per dag",
+                                        size=20,
+                                        weight=ft.FontWeight.BOLD,
+                                        expand=True,
+                                        text_align=ft.TextAlign.LEFT,
+                                    ),
+                                ],
                             ),
                             ft.Container(
                                 content=chart_area,
@@ -310,34 +432,22 @@ class ChartView:
                         expand=True,
                         spacing=8,
                     ),
-                    padding=ft.padding.symmetric(horizontal=8, vertical=12),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
                     expand=True,
                 ),
             ],
             expand=True,
         )
 
-        return ft.View(
+        view = ft.View(
             route="/chart",
             padding=0,
-            controls=[
-                ft.Row(
-                    controls=[
-                        build_nav_rail(
-                            self._page,
-                            selected_index=4,
-                            year=today.year,
-                            month=today.month,
-                        ),
-                        ft.VerticalDivider(
-                            width=1,
-                            thickness=1,
-                            color=ft.Colors.OUTLINE_VARIANT,
-                        ),
-                        content_column,
-                    ],
-                    expand=True,
-                    spacing=0,
-                )
-            ],
+            controls=[content_column],
         )
+        view.drawer = build_nav_drawer(
+            self._page,
+            selected_index=4,
+            year=today.year,
+            month=today.month,
+        )
+        return view

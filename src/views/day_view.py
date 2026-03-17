@@ -12,7 +12,22 @@ from src.models.template import Template
 from src.services.activity_service import ActivityService
 from src.services.settings_service import SettingsService
 from src.services.template_service import TemplateService
-from src.views.nav_bar import build_nav_rail
+from src.views.nav_bar import build_nav_drawer, open_nav_drawer
+
+_DUTCH_MONTHS: dict[int, str] = {
+    1: "januari",
+    2: "februari",
+    3: "maart",
+    4: "april",
+    5: "mei",
+    6: "juni",
+    7: "juli",
+    8: "augustus",
+    9: "september",
+    10: "oktober",
+    11: "november",
+    12: "december",
+}
 
 _CATEGORY_COLORS: dict[str, str] = {
     "rust": ft.Colors.BLUE_200,
@@ -73,8 +88,8 @@ class DayView:
         self._slot_to_activity: dict[int, Activity] = {}
 
         self._add_btn = ft.FilledButton(
-            "Voeg activiteit toe",
-            icon=ft.Icons.ADD,
+            "Activiteit instellen",
+            icon=ft.Icons.EDIT_OUTLINED,
             on_click=self._on_add_tap,
             visible=False,
         )
@@ -179,7 +194,10 @@ class DayView:
     # ── event handlers ────────────────────────────────────────────────────────
 
     def _on_slot_tap(self, slot_idx: int) -> Callable[[ft.ControlEvent], None]:
-        """Return a click handler for a single time slot.
+        """Return a click handler that toggles slot selection.
+
+        Works for both empty and occupied slots. The ✕ icon on occupied slots
+        is handled separately by _on_x_tap.
 
         Args:
             slot_idx: Index of the tapped slot.
@@ -189,9 +207,6 @@ class DayView:
         """
 
         def handler(e: ft.ControlEvent) -> None:
-            if slot_idx in self._slot_to_activity:
-                self._show_delete_dialog(self._slot_to_activity[slot_idx])
-                return
             if slot_idx in self._selected_slots:
                 self._selected_slots.remove(slot_idx)
             else:
@@ -202,8 +217,33 @@ class DayView:
 
         return handler
 
+    def _on_x_tap(
+        self, activity: Activity, slot_idx: int
+    ) -> Callable[[ft.ControlEvent], None]:
+        """Return a handler for the ✕ icon on an occupied slot.
+
+        Tapping the first slot's ✕ opens a delete dialog.
+        Tapping a later slot's ✕ opens a truncate dialog.
+
+        Args:
+            activity: The activity occupying this slot.
+            slot_idx: Index of the slot whose ✕ was tapped.
+
+        Returns:
+            Sync event handler.
+        """
+
+        def handler(e: ft.ControlEvent) -> None:
+            first_slot = self._time_str_to_slot(activity.start_time or "")
+            if first_slot == slot_idx:
+                self._show_delete_dialog(activity)
+            else:
+                self._show_truncate_dialog(activity, slot_idx)
+
+        return handler
+
     def _show_delete_dialog(self, activity: Activity) -> None:
-        """Open a confirmation dialog to delete an activity.
+        """Open a confirmation dialog to delete the whole activity.
 
         Args:
             activity: The activity to delete.
@@ -219,7 +259,7 @@ class DayView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text(f"Verwijder '{activity.name}'?"),
                 content=ft.Text(
                     f"{activity.duration_minutes} min · {activity.start_time}"
@@ -231,6 +271,41 @@ class DayView:
             )
         )
 
+    def _show_truncate_dialog(self, activity: Activity, from_slot: int) -> None:
+        """Open a dialog to truncate an activity from a given slot onward.
+
+        Args:
+            activity: The activity to shorten.
+            from_slot: The slot index at which to start truncating.
+        """
+        first_slot = self._time_str_to_slot(activity.start_time or "") or 0
+        new_duration = (from_slot - first_slot) * 30
+        remove_duration = activity.duration_minutes - new_duration
+
+        def do_truncate(e: ft.ControlEvent) -> None:
+            activity.duration_minutes = new_duration
+            self._service.update_activity(activity)
+            self._page.pop_dialog()
+            self._refresh()
+
+        def cancel(e: ft.ControlEvent) -> None:
+            self._page.pop_dialog()
+
+        self._page.show_dialog(
+            ft.AlertDialog(
+                modal=False,
+                title=ft.Text(f"Verwijder laatste {remove_duration} min?"),
+                content=ft.Text(
+                    f"'{activity.name}' wordt ingekort van "
+                    f"{activity.duration_minutes} naar {new_duration} min."
+                ),
+                actions=[
+                    ft.TextButton("Annuleren", on_click=cancel),
+                    ft.FilledButton("Inkorten", on_click=do_truncate),
+                ],
+            )
+        )
+
     def _on_add_tap(self, e: ft.ControlEvent) -> None:
         """Open the add-activity dialog for the selected slots.
 
@@ -238,8 +313,10 @@ class DayView:
             e: Click event from the add button.
         """
         sorted_slots = sorted(self._selected_slots)
-        start_time = self._slot_to_time_str(sorted_slots[0])
-        duration_minutes = len(sorted_slots) * 30
+        min_slot = sorted_slots[0]
+        max_slot = sorted_slots[-1]
+        start_time = self._slot_to_time_str(min_slot)
+        duration_minutes = (max_slot - min_slot + 1) * 30
 
         category_dd = ft.Dropdown(
             label="Categorie",
@@ -249,49 +326,58 @@ class DayView:
             ],
             border_radius=12,
         )
-        activity_dd = ft.Dropdown(
-            label="Activiteit",
-            options=[],
-            border_radius=12,
+        activity_scroll = ft.Column(
+            controls=[],
+            spacing=0,
+            scroll=ft.ScrollMode.AUTO,
         )
-        new_name_field = ft.TextField(
-            label="Naam nieuwe activiteit",
-            border_radius=12,
+        activity_group = ft.RadioGroup(content=activity_scroll)
+        activity_list_box = ft.Container(
+            content=activity_group,
+            border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+            border_radius=8,
+            padding=ft.padding.symmetric(horizontal=4),
+            height=160,
+            visible=False,
+            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        )
+        add_new_btn = ft.TextButton(
+            "+ Activiteit toevoegen",
+            icon=ft.Icons.ADD,
             visible=False,
         )
         error_text = ft.Text(value="", color=ft.Colors.ERROR)
 
-        def on_category_change(ev: ft.ControlEvent) -> None:
+        def refresh_activity_list() -> None:
             templates = self._template_service.get_all_templates()
-            activity_dd.options = [
-                ft.dropdown.Option(key=t.name, text=t.name)
+            activity_scroll.controls = [
+                ft.Radio(value=t.name, label=t.name)
                 for t in templates
                 if t.category == category_dd.value
-            ] + [ft.dropdown.Option(key=_NEW_ACTIVITY_KEY, text="+ Nieuwe activiteit")]
-            activity_dd.value = None
-            new_name_field.visible = False
+            ]
+            activity_list_box.visible = True
+            add_new_btn.visible = True
+
+        def on_category_change(ev: ft.ControlEvent) -> None:
+            refresh_activity_list()
+            activity_group.value = None
             self._page.update()
 
         def on_activity_change(ev: ft.ControlEvent) -> None:
-            new_name_field.visible = activity_dd.value == _NEW_ACTIVITY_KEY
             self._page.update()
 
-        category_dd.on_select = on_category_change
-        activity_dd.on_select = on_activity_change
+        def on_add_new_click(ev: ft.ControlEvent) -> None:
+            name_field = ft.TextField(
+                label="Naam nieuwe activiteit",
+                border_radius=12,
+                autofocus=True,
+            )
+            name_error = ft.Text(value="", color=ft.Colors.ERROR)
 
-        def on_save(ev: ft.ControlEvent) -> None:
-            if not category_dd.value:
-                error_text.value = "Kies een categorie."
-                self._page.update()
-                return
-            if not activity_dd.value:
-                error_text.value = "Kies een activiteit."
-                self._page.update()
-                return
-            if activity_dd.value == _NEW_ACTIVITY_KEY:
-                name = (new_name_field.value or "").strip()
+            def on_add(ev2: ft.ControlEvent) -> None:
+                name = (name_field.value or "").strip()
                 if not name:
-                    error_text.value = "Vul een naam in."
+                    name_error.value = "Vul een naam in."
                     self._page.update()
                     return
                 self._template_service.add_template(
@@ -301,8 +387,74 @@ class DayView:
                         duration_minutes=30,
                     )
                 )
-            else:
-                name = activity_dd.value  # type: ignore[assignment]
+                self._page.pop_dialog()
+                refresh_activity_list()
+                activity_group.value = name
+                self._page.update()
+
+            self._page.show_dialog(
+                ft.AlertDialog(
+                    modal=False,
+                    title=ft.Text("Nieuwe activiteit"),
+                    content=ft.Column(
+                        controls=[name_field, name_error],
+                        spacing=12,
+                        tight=True,
+                        width=280,
+                    ),
+                    actions=[
+                        ft.FilledButton("Toevoegen", on_click=on_add),
+                    ],
+                )
+            )
+
+        category_dd.on_select = on_category_change
+        activity_group.on_change = on_activity_change
+        add_new_btn.on_click = on_add_new_click
+
+        def on_save(ev: ft.ControlEvent) -> None:
+            if not category_dd.value:
+                error_text.value = "Kies een categorie."
+                self._page.update()
+                return
+            if not activity_group.value:
+                error_text.value = "Kies een activiteit."
+                self._page.update()
+                return
+            name: str = activity_group.value  # type: ignore[assignment]
+            # Split any occupied activities that overlap with the selected range
+            affected: dict[str, Activity] = {}
+            for s in range(min_slot, max_slot + 1):
+                if s in self._slot_to_activity:
+                    act = self._slot_to_activity[s]
+                    affected[act.id] = act
+            for act in affected.values():
+                act_start = self._time_str_to_slot(act.start_time or "") or 0
+                act_num_slots = act.duration_minutes // 30
+                self._service.delete_activity(act.id)
+                before_count = max(0, min_slot - act_start)
+                if before_count > 0:
+                    self._service.add_activity(
+                        Activity(
+                            name=act.name,
+                            category=act.category,
+                            duration_minutes=before_count * 30,
+                            date=self._date,
+                            start_time=self._slot_to_time_str(act_start),
+                        )
+                    )
+                after_start = max_slot + 1
+                after_count = max(0, (act_start + act_num_slots) - after_start)
+                if after_count > 0:
+                    self._service.add_activity(
+                        Activity(
+                            name=act.name,
+                            category=act.category,
+                            duration_minutes=after_count * 30,
+                            date=self._date,
+                            start_time=self._slot_to_time_str(after_start),
+                        )
+                    )
             self._service.add_activity(
                 Activity(
                     name=name,
@@ -313,15 +465,13 @@ class DayView:
                 )
             )
             self._page.pop_dialog()
+            self._merge_adjacent_activities()
             self._refresh()
-
-        def on_cancel(ev: ft.ControlEvent) -> None:
-            self._page.pop_dialog()
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
-                title=ft.Text("Activiteit toevoegen"),
+                modal=False,
+                title=ft.Text("Activiteit instellen"),
                 content=ft.Column(
                     controls=[
                         ft.Text(
@@ -329,8 +479,7 @@ class DayView:
                             color=ft.Colors.PRIMARY,
                         ),
                         category_dd,
-                        activity_dd,
-                        new_name_field,
+                        activity_list_box,
                         error_text,
                     ],
                     spacing=12,
@@ -338,11 +487,49 @@ class DayView:
                     width=320,
                 ),
                 actions=[
-                    ft.TextButton("Annuleren", on_click=on_cancel),
+                    add_new_btn,
                     ft.FilledButton("Opslaan", on_click=on_save),
                 ],
+                actions_alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             )
         )
+
+    def _merge_adjacent_activities(self) -> None:
+        """Merge consecutive activities on this day that share name and category."""
+        day = self._service.get_activities_for_day(self._date)
+        activities = sorted(
+            [a for a in day.activities if a.start_time],
+            key=lambda a: a.start_time or "",
+        )
+        merged = True
+        while merged:
+            merged = False
+            for i in range(len(activities) - 1):
+                a1 = activities[i]
+                a2 = activities[i + 1]
+                if a1.name != a2.name or a1.category != a2.category:
+                    continue
+                s1 = self._time_str_to_slot(a1.start_time or "")
+                s2 = self._time_str_to_slot(a2.start_time or "")
+                if s1 is None or s2 is None:
+                    continue
+                if s1 + a1.duration_minutes // 30 == s2:
+                    a1.duration_minutes += a2.duration_minutes
+                    self._service.update_activity(a1)
+                    self._service.delete_activity(a2.id)
+                    activities.pop(i + 1)
+                    merged = True
+                    break
+
+    # ── drawer ────────────────────────────────────────────────────────────────
+
+    def _open_drawer(self, e: ft.ControlEvent) -> None:
+        """Open the navigation drawer.
+
+        Args:
+            e: Click event from the menu button.
+        """
+        open_nav_drawer(self._page)
 
     # ── settings ──────────────────────────────────────────────────────────────
 
@@ -395,7 +582,7 @@ class DayView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text("Dag-instellingen"),
                 content=ft.Column(
                     controls=[start_field, end_field, error_text],
@@ -406,6 +593,83 @@ class DayView:
                 actions=[
                     ft.TextButton("Annuleren", on_click=on_cancel),
                     ft.FilledButton("Opslaan", on_click=on_save),
+                ],
+            )
+        )
+
+    def _show_manage_templates_dialog(self) -> None:
+        """Open a dialog listing all activity templates grouped by category.
+
+        Each template row shows a delete button. Deleting a template closes
+        the dialog, removes the template, and reopens the dialog so the list
+        updates immediately.
+        """
+        templates = self._template_service.get_all_templates()
+
+        def make_delete_handler(t: Template) -> Callable[[ft.ControlEvent], None]:
+            """Return a click handler that deletes template *t*.
+
+            Args:
+                t: The template to delete when the handler is called.
+
+            Returns:
+                A sync event handler.
+            """
+
+            def handler(ev: ft.ControlEvent) -> None:
+                self._page.pop_dialog()
+                self._template_service.delete_template(t.id)
+                self._show_manage_templates_dialog()
+
+            return handler
+
+        sections: list[ft.Control] = []
+        for category in INTENSITY_LEVELS:
+            cat_templates = [t for t in templates if t.category == category]
+            if not cat_templates:
+                continue
+            sections.append(
+                ft.Text(
+                    _INTENSITY_LABELS[category],
+                    weight=ft.FontWeight.BOLD,
+                    color=ft.Colors.PRIMARY,
+                )
+            )
+            for tmpl in cat_templates:
+                sections.append(
+                    ft.Row(
+                        controls=[
+                            ft.Text(
+                                tmpl.name,
+                                expand=True,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.DELETE_OUTLINE,
+                                icon_size=16,
+                                on_click=make_delete_handler(tmpl),
+                            ),
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    )
+                )
+
+        self._page.show_dialog(
+            ft.AlertDialog(
+                modal=False,
+                title=ft.Text("Activiteiten beheren"),
+                content=ft.Column(
+                    controls=sections,
+                    scroll=ft.ScrollMode.AUTO,
+                    width=280,
+                    height=400,
+                    spacing=4,
+                ),
+                actions=[
+                    ft.TextButton(
+                        "Sluiten",
+                        on_click=lambda _: self._page.pop_dialog(),
+                    ),
                 ],
             )
         )
@@ -430,23 +694,55 @@ class DayView:
             if start == slot_idx:
                 content = ft.Row(
                     controls=[
-                        ft.Text(
-                            activity.name,
-                            size=10,
-                            color=ft.Colors.ON_SURFACE,
-                            no_wrap=True,
-                            overflow=ft.TextOverflow.ELLIPSIS,
+                        ft.Container(
+                            content=ft.Row(
+                                controls=[
+                                    ft.Text(
+                                        activity.name,
+                                        size=10,
+                                        color=ft.Colors.ON_SURFACE,
+                                        no_wrap=True,
+                                        overflow=ft.TextOverflow.ELLIPSIS,
+                                        expand=True,
+                                    ),
+                                    ft.Text(
+                                        f"{activity.points:+d}pt",
+                                        size=10,
+                                        weight=ft.FontWeight.BOLD,
+                                        color=ft.Colors.ON_SURFACE_VARIANT,
+                                    ),
+                                ],
+                                spacing=4,
+                            ),
                             expand=True,
+                            on_click=self._on_slot_tap(slot_idx),
                         ),
-                        ft.Text(
-                            f"{activity.points:+d}pt",
-                            size=10,
-                            weight=ft.FontWeight.BOLD,
-                            color=ft.Colors.ON_SURFACE_VARIANT,
+                        ft.Container(
+                            content=ft.Text(
+                                "✕", size=9, color=ft.Colors.ON_SURFACE_VARIANT
+                            ),
+                            on_click=self._on_x_tap(activity, slot_idx),
+                            padding=ft.padding.only(left=4, right=2),
                         ),
-                        ft.Text("✕", size=9, color=ft.Colors.ON_SURFACE_VARIANT),
                     ],
-                    spacing=4,
+                    spacing=0,
+                )
+            else:
+                content = ft.Row(
+                    controls=[
+                        ft.Container(
+                            expand=True,
+                            on_click=self._on_slot_tap(slot_idx),
+                        ),
+                        ft.Container(
+                            content=ft.Text(
+                                "✕", size=9, color=ft.Colors.ON_SURFACE_VARIANT
+                            ),
+                            on_click=self._on_x_tap(activity, slot_idx),
+                            padding=ft.padding.only(left=4, right=2),
+                        ),
+                    ],
+                    spacing=0,
                 )
 
         container = ft.Container(
@@ -454,7 +750,7 @@ class DayView:
             border_radius=4,
             height=28,
             expand=True,
-            on_click=self._on_slot_tap(slot_idx),
+            on_click=self._on_slot_tap(slot_idx) if activity is None else None,
             content=content,
             padding=ft.padding.symmetric(horizontal=6) if content else None,
         )
@@ -478,6 +774,24 @@ class DayView:
 
     # ── build ─────────────────────────────────────────────────────────────────
 
+    def _on_swipe_end(self, e: ft.DragEndEvent) -> None:  # type: ignore[type-arg]
+        """Navigate prev/next day on horizontal swipe.
+
+        Args:
+            e: Drag end event with velocity information.
+        """
+        vx: float = getattr(e, "velocity_x", 0.0)
+        if vx < -300:
+            self._page.run_task(
+                self._page.push_route,
+                "/day/" + (self._date + timedelta(days=1)).isoformat(),
+            )
+        elif vx > 300:
+            self._page.run_task(
+                self._page.push_route,
+                "/day/" + (self._date - timedelta(days=1)).isoformat(),
+            )
+
     def build(self) -> ft.View:
         """Compose and return the full Flet View for the time grid.
 
@@ -494,6 +808,10 @@ class DayView:
         self._points_text.value = f"{total:+d} pnt"
         self._points_text.color = ft.Colors.ERROR if total < 0 else ft.Colors.PRIMARY
 
+        day_title = (
+            f"{self._date.day} {_DUTCH_MONTHS[self._date.month]}"
+        )
+
         content_column = ft.Column(
             controls=[
                 ft.Container(
@@ -502,35 +820,18 @@ class DayView:
                             ft.Row(
                                 controls=[
                                     ft.IconButton(
-                                        icon=ft.Icons.CHEVRON_LEFT,
-                                        on_click=lambda _: self._page.run_task(
-                                            self._page.push_route,
-                                            f"/day/{(self._date - timedelta(days=1)).isoformat()}",
-                                        ),
+                                        icon=ft.Icons.MENU,
+                                        on_click=self._open_drawer,
                                         icon_size=20,
                                     ),
                                     ft.Text(
-                                        self._date.strftime("%d %b %Y"),
-                                        size=15,
+                                        day_title,
+                                        size=20,
                                         weight=ft.FontWeight.BOLD,
                                         expand=True,
                                         text_align=ft.TextAlign.CENTER,
                                     ),
                                     self._points_text,
-                                    ft.IconButton(
-                                        icon=ft.Icons.SETTINGS_OUTLINED,
-                                        tooltip="Tijdinstellingen",
-                                        on_click=self._open_settings,
-                                        icon_size=20,
-                                    ),
-                                    ft.IconButton(
-                                        icon=ft.Icons.CHEVRON_RIGHT,
-                                        on_click=lambda _: self._page.run_task(
-                                            self._page.push_route,
-                                            f"/day/{(self._date + timedelta(days=1)).isoformat()}",
-                                        ),
-                                        icon_size=20,
-                                    ),
                                 ],
                                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                             ),
@@ -543,30 +844,58 @@ class DayView:
                     padding=ft.padding.symmetric(horizontal=12, vertical=8),
                     expand=True,
                 ),
+                ft.Container(
+                    content=ft.Row(
+                        controls=[
+                            ft.IconButton(
+                                icon=ft.Icons.CHEVRON_LEFT,
+                                on_click=lambda _: self._page.run_task(
+                                    self._page.push_route,
+                                    "/day/"
+                                    + (self._date - timedelta(days=1)).isoformat(),
+                                ),
+                                icon_size=22,
+                            ),
+                            ft.Container(expand=True),
+                            ft.IconButton(
+                                icon=ft.Icons.SETTINGS_OUTLINED,
+                                tooltip="Tijdinstellingen",
+                                on_click=self._open_settings,
+                                icon_size=20,
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.CHEVRON_RIGHT,
+                                on_click=lambda _: self._page.run_task(
+                                    self._page.push_route,
+                                    "/day/"
+                                    + (self._date + timedelta(days=1)).isoformat(),
+                                ),
+                                icon_size=22,
+                            ),
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    padding=ft.padding.symmetric(horizontal=4, vertical=0),
+                ),
             ],
             expand=True,
         )
-        return ft.View(
+
+        swipe_detector = ft.GestureDetector(
+            content=content_column,
+            on_horizontal_drag_end=self._on_swipe_end,  # type: ignore[arg-type]
+            expand=True,
+        )
+
+        view = ft.View(
             route=f"/day/{self._date.isoformat()}",
             padding=0,
-            controls=[
-                ft.Row(
-                    controls=[
-                        build_nav_rail(
-                            self._page,
-                            selected_index=0,
-                            year=self._date.year,
-                            month=self._date.month,
-                        ),
-                        ft.VerticalDivider(
-                            width=1,
-                            thickness=1,
-                            color=ft.Colors.OUTLINE_VARIANT,
-                        ),
-                        content_column,
-                    ],
-                    expand=True,
-                    spacing=0,
-                )
-            ],
+            controls=[swipe_detector],
         )
+        view.drawer = build_nav_drawer(
+            self._page,
+            selected_index=0,
+            year=self._date.year,
+            month=self._date.month,
+        )
+        return view

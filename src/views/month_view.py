@@ -12,7 +12,7 @@ from src.models.day import Day
 from src.models.settings import AppSettings
 from src.services.activity_service import ActivityService
 from src.services.settings_service import SettingsService
-from src.views.nav_bar import build_nav_rail
+from src.views.nav_bar import build_nav_drawer, open_nav_drawer
 
 _JANUARY: int = 1
 _DECEMBER: int = 12
@@ -127,11 +127,13 @@ class MonthView:
             day_date: The date to navigate to.
 
         Returns:
-            Async event handler.
+            Sync event handler.
         """
 
-        async def handler(e: ft.ControlEvent) -> None:
-            await self._page.push_route(f"/day/{day_date.isoformat()}")
+        def handler(e: ft.ControlEvent) -> None:
+            self._page.run_task(
+                self._page.push_route, f"/day/{day_date.isoformat()}"
+            )
 
         return handler
 
@@ -139,12 +141,12 @@ class MonthView:
         """Return a handler navigating to the previous month.
 
         Returns:
-            Async event handler.
+            Sync event handler.
         """
 
-        async def handler(e: ft.ControlEvent) -> None:
+        def handler(e: ft.ControlEvent) -> None:
             y, m = _prev_month(self._year, self._month)
-            await self._page.push_route(f"/month/{y}/{m}")
+            self._page.run_task(self._page.push_route, f"/month/{y}/{m}")
 
         return handler
 
@@ -152,12 +154,12 @@ class MonthView:
         """Return a handler navigating to the next month.
 
         Returns:
-            Async event handler.
+            Sync event handler.
         """
 
-        async def handler(e: ft.ControlEvent) -> None:
+        def handler(e: ft.ControlEvent) -> None:
             y, m = _next_month(self._year, self._month)
-            await self._page.push_route(f"/month/{y}/{m}")
+            self._page.run_task(self._page.push_route, f"/month/{y}/{m}")
 
         return handler
 
@@ -215,13 +217,18 @@ class MonthView:
 
         self._page.show_dialog(
             ft.AlertDialog(
-                modal=True,
+                modal=False,
                 title=ft.Text("Kleur drempelwaarden"),
                 content=ft.Column(
                     controls=[
                         ft.Row(
                             controls=[
-                                ft.Container(width=16, height=16, bgcolor=_COLOR_GREEN, border_radius=4),
+                                ft.Container(
+                                    width=16,
+                                    height=16,
+                                    bgcolor=_COLOR_GREEN,
+                                    border_radius=4,
+                                ),
                                 green_field,
                             ],
                             spacing=8,
@@ -229,7 +236,12 @@ class MonthView:
                         ),
                         ft.Row(
                             controls=[
-                                ft.Container(width=16, height=16, bgcolor=_COLOR_ORANGE, border_radius=4),
+                                ft.Container(
+                                    width=16,
+                                    height=16,
+                                    bgcolor=_COLOR_ORANGE,
+                                    border_radius=4,
+                                ),
                                 orange_field,
                             ],
                             spacing=8,
@@ -237,7 +249,12 @@ class MonthView:
                         ),
                         ft.Row(
                             controls=[
-                                ft.Container(width=16, height=16, bgcolor=_COLOR_RED, border_radius=4),
+                                ft.Container(
+                                    width=16,
+                                    height=16,
+                                    bgcolor=_COLOR_RED,
+                                    border_radius=4,
+                                ),
                                 red_field,
                             ],
                             spacing=8,
@@ -348,35 +365,42 @@ class MonthView:
         rows = [self._build_week_row(week, days_by_num) for week in weeks]
         return ft.Column(controls=[header, *rows], spacing=3)
 
+    def _on_swipe_end(self, e: ft.DragEndEvent) -> None:  # type: ignore[type-arg]
+        """Navigate prev/next month on horizontal swipe.
+
+        Args:
+            e: Drag end event with velocity information.
+        """
+        vx: float = getattr(e, "velocity_x", 0.0)
+        if vx < -300:
+            y, m = _next_month(self._year, self._month)
+            self._page.run_task(self._page.push_route, f"/month/{y}/{m}")
+        elif vx > 300:
+            y, m = _prev_month(self._year, self._month)
+            self._page.run_task(self._page.push_route, f"/month/{y}/{m}")
+
     def _build_month_header(self) -> ft.Row:
-        """Build the prev/next navigation row with month title and settings button.
+        """Build the header row with menu button and month title.
 
         Returns:
-            A Row with chevron buttons, the month label, and a gear icon.
+            A Row with menu icon and centred month label.
         """
         title = f"{_DUTCH_MONTHS[self._month]} {self._year}"
         return ft.Row(
             controls=[
                 ft.IconButton(
-                    icon=ft.Icons.CHEVRON_LEFT,
-                    on_click=self._on_prev(),
+                    icon=ft.Icons.MENU,
+                    on_click=lambda _: open_nav_drawer(self._page),
+                    icon_size=20,
                 ),
                 ft.Text(
                     title,
-                    size=18,
+                    size=20,
                     weight=ft.FontWeight.BOLD,
                     expand=True,
                     text_align=ft.TextAlign.CENTER,
                 ),
-                ft.IconButton(
-                    icon=ft.Icons.SETTINGS_OUTLINED,
-                    tooltip="Kleuren instellen",
-                    on_click=self._open_settings,
-                ),
-                ft.IconButton(
-                    icon=ft.Icons.CHEVRON_RIGHT,
-                    on_click=self._on_next(),
-                ),
+                ft.Container(width=40),
             ],
         )
 
@@ -397,34 +421,55 @@ class MonthView:
                             self._build_calendar_grid(days),
                         ],
                         scroll=ft.ScrollMode.AUTO,
+                        expand=True,
                     ),
-                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
                     expand=True,
+                ),
+                ft.Container(
+                    content=ft.Row(
+                        controls=[
+                            ft.IconButton(
+                                icon=ft.Icons.CHEVRON_LEFT,
+                                on_click=self._on_prev(),
+                                icon_size=22,
+                            ),
+                            ft.Container(expand=True),
+                            ft.IconButton(
+                                icon=ft.Icons.SETTINGS_OUTLINED,
+                                tooltip="Kleuren instellen",
+                                on_click=self._open_settings,
+                                icon_size=20,
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.CHEVRON_RIGHT,
+                                on_click=self._on_next(),
+                                icon_size=22,
+                            ),
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    padding=ft.padding.symmetric(horizontal=4, vertical=0),
                 ),
             ],
             expand=True,
         )
-        return ft.View(
+
+        swipe_detector = ft.GestureDetector(
+            content=content_column,
+            on_horizontal_drag_end=self._on_swipe_end,  # type: ignore[arg-type]
+            expand=True,
+        )
+
+        view = ft.View(
             route=f"/month/{self._year}/{self._month}",
             padding=0,
-            controls=[
-                ft.Row(
-                    controls=[
-                        build_nav_rail(
-                            self._page,
-                            selected_index=1,
-                            year=self._year,
-                            month=self._month,
-                        ),
-                        ft.VerticalDivider(
-                            width=1,
-                            thickness=1,
-                            color=ft.Colors.OUTLINE_VARIANT,
-                        ),
-                        content_column,
-                    ],
-                    expand=True,
-                    spacing=0,
-                )
-            ],
+            controls=[swipe_detector],
         )
+        view.drawer = build_nav_drawer(
+            self._page,
+            selected_index=1,
+            year=self._year,
+            month=self._month,
+        )
+        return view
